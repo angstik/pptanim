@@ -148,7 +148,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
     const { deck, slide, shape, img, crops, plan } = o;
     const doc = slide.doc;
     const b = o.box || shape.box;
-    if (!b) throw new Error("Position de la forme inconnue (espace réservé hérité du masque). Déplacez-la légèrement dans PowerPoint puis recommencez.");
+    if (!b) throw new Error("Position de la zone de texte inconnue (espace réservé hérité du masque). Déplacez-la légèrement dans PowerPoint puis recommencez.");
     const kx = b.cx / img.width, ky = b.cy / img.height; // EMU par pixel
     const fx = (px) => (px * kx) / deck.size.cx, fy = (px) => (px * ky) / deck.size.cy;
     const frac = (p) => ({ x: fx(p.x), y: fy(p.y) });

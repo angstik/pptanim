@@ -98,7 +98,7 @@ export function segment(img, text, opts = {}) {
   for (let i = 0, p = 3; i < W * H; i++, p += 4) if (data[p] > alphaMin) { mask[i] = 1; on++; }
   if (!on) throw new Error("Image vide : aucun pixel visible.");
   if (on > 0.6 * W * H) {
-    throw new Error("Le fond de l'image n'est pas transparent : la forme a sans doute un remplissage. Ce PoC ne traite que le texte sur fond transparent.");
+    throw new Error("Le fond de l'image n'est pas transparent : la zone de texte a sans doute un remplissage. Seul le texte sur fond transparent est pris en charge.");
   }
 
   let { labels, comps } = label(mask, W, H);

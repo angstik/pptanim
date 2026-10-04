@@ -13,23 +13,25 @@ aléatoire. Tout le traitement se fait dans le navigateur : aucun fichier n'est 
 
 1. Dans PowerPoint : clic droit sur la zone de texte, « Enregistrer en tant qu'image », format PNG.
 2. Dans l'application : choisir le .pptx et le PNG (ou les déposer sur la page, ou coller l'image avec
-   Ctrl+V), puis la diapo et la forme, « Analyser ».
+   Ctrl+V), puis la diapo et la zone de texte, « Analyser ».
 3. Régler l'effet, vérifier l'aperçu, « Télécharger le .pptx animé ».
 4. Ouvrir le fichier obtenu dans PowerPoint et lancer le diaporama.
+
+Le bouton « Aide » de l'application reprend ces étapes avec un schéma pour chacune.
 
 L'application s'installe depuis le navigateur (bouton « Installer » ou menu du navigateur) et fonctionne
 ensuite hors ligne.
 
 ## Limites connues
 
-- Texte sur fond transparent uniquement (pas de remplissage, d'ombre ni de halo sur la forme).
-- Forme de premier niveau, non pivotée, avec une position propre (pas un espace réservé jamais déplacé).
+- Texte sur fond transparent uniquement (pas de remplissage, d'ombre ni de halo sur la zone de texte).
+- Zone de texte hors groupe, non pivotée, avec une position propre (pas un espace réservé jamais déplacé).
 - Lettres liées ou qui se touchent (cursives, certaines paires en italique) : le mot reste entier.
 - Écriture de gauche à droite.
 - Démarrage : « au clic » pour la première lettre, « avec la précédente » pour les autres ; le reste se
   règle dans le volet Animations (sélectionner toutes les lignes « PPTAnim » pour les déplacer).
-- Le texte devient des images : la forme d'origine est conservée, masquée, pour pouvoir recommencer.
-- Le collage direct d'une forme copiée depuis PowerPoint dépend de ce que PowerPoint place dans le
+- Le texte devient des images : la zone de texte d'origine est conservée, masquée, pour pouvoir recommencer.
+- Le collage direct d'une zone de texte copiée depuis PowerPoint dépend de ce que PowerPoint place dans le
   presse-papiers (image PNG à fond transparent attendue) ; ce point n'a pas été vérifié avec PowerPoint.
 
 ## Développement
@@ -73,7 +75,7 @@ python3 test/check.py           # structure et rendu des pptx (PML_XSD=chemin/pm
 
 ## Complément PowerPoint (facultatif)
 
-La même application sert de volet dans PowerPoint via `taskpane.html` : elle part de la forme
+La même application sert de volet dans PowerPoint via `taskpane.html` : elle part de la zone de texte
 sélectionnée et insère la diapo animée après l'originale. Il faut Microsoft 365 version 2601 ou plus.
 Charger `office/manifest.xml` dans PowerPoint, par exemple avec
 `npx office-addin-debugging start office/manifest.xml desktop --app powerpoint`.

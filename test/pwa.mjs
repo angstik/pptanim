@@ -67,6 +67,19 @@ for (const icon of parsed.icons) {
 check(/^\d+\.\d+\.\d+-[0-9a-f]{8}$/.test(await page.textContent('#version')), `version affichée : ${await page.textContent('#version')}`);
 check((await page.textContent('#offline')) === 'disponible hors ligne', `état hors ligne : ${await page.textContent('#offline')}`);
 
+// Aide : la fenêtre s'ouvre sur les 4 étapes illustrées et se referme
+await page.click('#help-open');
+const help = await page.evaluate(() => ({
+  open: document.getElementById('help').open,
+  steps: document.querySelectorAll('#help-app > li').length,
+  drawings: [...document.querySelectorAll('#help-app svg')].filter((e) => e.getBoundingClientRect().width > 100).length,
+  addinHidden: document.getElementById('help-addin').hidden,
+}));
+check(help.open && help.steps === 4 && help.drawings === 4 && help.addinHidden, `aide : ${JSON.stringify(help)}`);
+await page.screenshot({ path: path.join(root, 'test', 'out', 'aide.png') });
+await page.click('#help-close');
+check(!(await page.evaluate(() => document.getElementById('help').open)), 'aide refermée');
+
 // Hors ligne : la page se recharge et l'application produit un pptx sans réseau
 await context.setOffline(true);
 await page.reload();

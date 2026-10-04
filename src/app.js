@@ -1,5 +1,5 @@
-// PPT Anim : application web installable (pptx + image de la forme, pptx animé téléchargé)
-// et, via taskpane.html, complément PowerPoint (forme sélectionnée, diapo animée réinsérée).
+// PPT Anim : application web installable (pptx + image de la zone de texte, pptx animé téléchargé)
+// et, via taskpane.html, complément PowerPoint (zone de texte sélectionnée, diapo animée réinsérée).
 
 import { segment, unitsOf, cropUnit } from './core/segment.js';
 import { scramblePlan, orderKeyframes, curvePoint, ease } from './core/effects.js';
@@ -163,7 +163,7 @@ async function analyzeSelection() {
     const sel = ctx.presentation.getSelectedShapes();
     const n = sel.getCount();
     await ctx.sync();
-    if (n.value !== 1) throw new Error('sélectionnez une seule forme de texte.');
+    if (n.value !== 1) throw new Error('sélectionnez une seule zone de texte.');
     const shape = sel.getItemAt(0);
     shape.load('id,name,left,top,width,height,rotation');
     const slide = shape.getParentSlide();
@@ -171,8 +171,8 @@ async function analyzeSelection() {
     const tf = shape.getTextFrameOrNullObject();
     tf.load('hasText');
     await ctx.sync();
-    if (tf.isNullObject || !tf.hasText) throw new Error('la forme sélectionnée ne contient pas de texte.');
-    if (shape.rotation) log(`Attention : forme pivotée de ${shape.rotation}°, non géré par ce PoC.`);
+    if (tf.isNullObject || !tf.hasText) throw new Error('l\'objet sélectionné ne contient pas de texte.');
+    if (shape.rotation) log(`Attention : zone de texte pivotée de ${shape.rotation}°, ce qui n'est pas géré.`);
     tf.textRange.load('text');
     const width = Math.min(4096, Math.max(64, Math.round(shape.width * 4)));
     const png = shape.getImageAsBase64({ width });
@@ -184,10 +184,10 @@ async function analyzeSelection() {
         box: { x: Math.round(shape.left * EMU), y: Math.round(shape.top * EMU), cx: Math.round(shape.width * EMU), cy: Math.round(shape.height * EMU) },
       },
     };
-    log(`Forme « ${shape.name} » (id ${shape.id}) sur la diapo ${slide.id} : ${shape.width.toFixed(1)}×${shape.height.toFixed(1)} pt`);
+    log(`Zone de texte « ${shape.name} » (id ${shape.id}) sur la diapo ${slide.id} : ${shape.width.toFixed(1)}×${shape.height.toFixed(1)} pt`);
     const img = await toImageData(b64ToBlob(png.value, 'image/png'));
     const ratio = (img.width / img.height) / (shape.width / shape.height);
-    if (Math.abs(ratio - 1) > 0.03) log(`Attention : l'image (${img.width}×${img.height}) n'a pas les proportions de la forme ; le placement des lettres peut être décalé.`);
+    if (Math.abs(ratio - 1) > 0.03) log(`Attention : l'image (${img.width}×${img.height}) n'a pas les proportions de la zone de texte ; le placement des lettres peut être décalé.`);
     analyze(img, tf.textRange.text);
   });
 }
@@ -205,7 +205,7 @@ async function generateAddin() {
     const deck = await engine.readDeck(zip);
     const sl = await engine.readSlide(zip, deck.slides[0].path);
     const shape = engine.findShape(sl, src.ref);
-    if (!shape) throw new Error(`forme « ${src.ref.name} » introuvable dans la diapo exportée (formes : ${sl.shapes.map((s) => `${s.id}:${s.name}`).join(', ')}).`);
+    if (!shape) throw new Error(`zone de texte « ${src.ref.name} » introuvable dans la diapo exportée (zones présentes : ${sl.shapes.map((s) => `${s.id}:${s.name}`).join(', ')}).`);
     const res = await engine.animate(zip, { deck, slide: sl, shape, box: shape.box || src.ref.box, img: state.img, crops, plan, curved: o.curved });
     const out = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
     ctx.presentation.insertSlidesFromBase64(out, { formatting: $('o-format').value, targetSlideId: src.slideId });
@@ -238,7 +238,7 @@ async function loadSlide() {
     sel.appendChild(op);
   });
   sel.disabled = !f.slide.shapes.length;
-  if (!f.slide.shapes.length) status('Aucune forme de texte de premier niveau sur cette diapo.', 'warn');
+  if (!f.slide.shapes.length) status('Aucune zone de texte utilisable sur cette diapo (les zones placées dans un groupe ne sont pas prises en compte).', 'warn');
   readyFile();
 }
 function readyFile() {
@@ -247,11 +247,11 @@ function readyFile() {
 async function analyzeFile() {
   const f = state.file;
   const shape = f.slide.shapes[+$('s-shape').value];
-  if (shape.rotated) log('Attention : forme pivotée ou retournée, non géré par ce PoC.');
+  if (shape.rotated) log('Attention : zone de texte pivotée ou retournée, ce qui n\'est pas géré.');
   const img = await toImageData(f.png);
   if (shape.box) {
     const ratio = (img.width / img.height) / (shape.box.cx / shape.box.cy);
-    if (Math.abs(ratio - 1) > 0.03) log(`Attention : l'image (${img.width}×${img.height}) n'a pas les proportions de la forme ; le placement des lettres peut être décalé.`);
+    if (Math.abs(ratio - 1) > 0.03) log(`Attention : l'image (${img.width}×${img.height}) n'a pas les proportions de la zone de texte ; le placement des lettres peut être décalé.`);
   }
   f.shapeIndex = +$('s-shape').value;
   f.slideIndex = +$('s-slide').value;
@@ -309,7 +309,7 @@ async function start() {
     log(`Complément PowerPoint, plateforme ${info.platform}, PowerPointApi 1.10 : ${ok ? 'oui' : 'non'}`);
     if (!ok) {
       $('analyze-addin').disabled = true;
-      status('Cette version de PowerPoint ne fournit pas PowerPointApi 1.10 (image d\'une forme). Utilisez l\'application web dans un navigateur.', 'warn');
+      status('Cette version de PowerPoint ne fournit pas PowerPointApi 1.10 (image d\'une zone de texte). Utilisez l\'application web dans un navigateur.', 'warn');
     }
   } else {
     $('mode').textContent = '';
@@ -331,6 +331,13 @@ async function start() {
     initPwa({ log });
   }
 
+  // Aide : fenêtre modale, contenu selon le mode
+  $('help-app').hidden = state.addin;
+  $('help-addin').hidden = !state.addin;
+  $('help-open').onclick = () => $('help').showModal();
+  $('help-close').onclick = () => $('help').close();
+  $('help').addEventListener('click', (e) => { if (e.target === $('help')) $('help').close(); }); // clic hors de la fenêtre
+
   $('analyze-addin').onclick = (e) => guard('Analyse', analyzeSelection, e.currentTarget);
   $('go-addin').onclick = (e) => guard('Génération', generateAddin, e.currentTarget);
   $('f-pptx').onchange = (e) => { const f = e.target.files[0]; if (f) guard('Lecture du pptx', () => loadPptx(f)); };
@@ -339,7 +346,7 @@ async function start() {
     if (!f) return;
     state.file = state.file || {};
     state.file.png = f;
-    log(`Image de la forme : ${f.name || 'collée'} (${Math.round(f.size / 1024)} Ko)`);
+    log(`Image de la zone de texte : ${f.name || 'collée'} (${Math.round(f.size / 1024)} Ko)`);
     readyFile();
   };
   $('s-slide').onchange = () => guard('Lecture de la diapo', loadSlide);

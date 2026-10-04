@@ -2,6 +2,12 @@ PPT Anim : historique des versions
 ==================================
 La version la plus récente est en haut. Le numéro est celui de package.json.
 
+0.2.1 (2026-10-04)
+------------------
+- Vocabulaire : « zone de texte » remplace « forme » dans tous les libellés et messages.
+- Bouton « Aide » : les 4 étapes illustrées, dans une fenêtre qui s'ouvre à la demande.
+- Champs de l'étape 1 réordonnés : présentation, diapo, zone de texte, image de cette zone.
+
 0.2.0 (2026-10-04)
 ------------------
 Première version publiée dans ce dépôt : l'application devient une PWA hébergée sur GitHub Pages.

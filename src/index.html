@@ -63,6 +63,24 @@
   .stage canvas { display: block; }
   #preview canvas { position: absolute; }
   #log { font: 12px/1.5 ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; margin: 0; max-height: 180px; overflow: auto; }
+  .grid.two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  dialog {
+    width: min(600px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; overflow: auto;
+    color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+  .help-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+  .help-head h2 { margin: 0; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+  .steps { list-style: none; margin: 0; padding: 4px 14px 14px; counter-reset: step; }
+  .steps li { display: grid; grid-template-columns: 132px 1fr; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .steps li:last-child { border-bottom: 0; }
+  .steps svg { width: 132px; height: 88px; display: block; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .steps h3 { margin: 0 0 3px; font-size: 14px; }
+  .steps h3::before { content: counter(step) ". "; color: var(--accent); }
+  .steps p { margin: 0; font-size: 13px; color: var(--muted); }
+  .steps.plain li { grid-template-columns: 1fr; padding: 9px 0; }
+  .help-note { margin: 0; padding: 0 14px 14px; font-size: 12px; color: var(--muted); }
+  @media (max-width: 420px) { .steps li { grid-template-columns: 1fr; } }
   footer { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
   [hidden] { display: none !important; }
 </style>
@@ -74,6 +92,7 @@
     <h1>PPT Anim</h1>
     <span id="mode">démarrage…</span>
     <button id="install" class="ghost small" hidden>Installer</button>
+    <button id="help-open" class="ghost small" aria-haspopup="dialog">Aide</button>
   </header>
   <div id="update" class="notice" hidden>
     <span>Une nouvelle version est prête.</span>
@@ -82,22 +101,22 @@
   <p id="status" class="notice" hidden></p>
 
   <section id="src-addin" hidden>
-    <h2>1. Forme de texte</h2>
-    <button id="analyze-addin">Analyser la forme sélectionnée</button>
+    <h2>1. Zone de texte</h2>
+    <button id="analyze-addin">Analyser la zone de texte sélectionnée</button>
     <p class="hint">Sélectionnez une zone de texte sans remplissage sur la diapo, puis cliquez.</p>
   </section>
 
   <section id="src-file" hidden>
     <h2>1. Fichiers</h2>
-    <div class="grid">
+    <div class="grid two">
       <div class="field"><label for="f-pptx">Présentation (.pptx)</label><input id="f-pptx" type="file" accept=".pptx"></div>
-      <div class="field"><label for="f-png">Image de la forme (.png)</label><input id="f-png" type="file" accept="image/png"></div>
       <div class="field"><label for="s-slide">Diapo</label><select id="s-slide" disabled></select></div>
-      <div class="field"><label for="s-shape">Forme de texte</label><select id="s-shape" disabled></select></div>
+      <div class="field"><label for="s-shape">Zone de texte à animer</label><select id="s-shape" disabled></select></div>
+      <div class="field"><label for="f-png">Image de cette zone de texte (.png)</label><input id="f-png" type="file" accept="image/png"></div>
     </div>
     <div class="row"><button id="analyze-file" disabled>Analyser</button></div>
-    <p class="hint">Image de la forme : dans PowerPoint, clic droit sur la zone de texte, « Enregistrer en tant qu'image », format PNG.
-      Vous pouvez aussi copier la forme et la coller ici (Ctrl+V), ou déposer les deux fichiers sur la page.</p>
+    <p class="hint">Pour obtenir l'image : dans PowerPoint, clic droit sur le bord de la zone de texte, « Enregistrer en tant
+      qu'image », format PNG. Le bouton « Aide » détaille les étapes.</p>
   </section>
 
   <section id="seg" hidden>
@@ -146,6 +165,79 @@
   </section>
   <footer>PPT Anim <span id="version">__APP_VERSION__</span> · <span id="offline">hors ligne : non disponible</span></footer>
 </main>
+<dialog id="help" aria-labelledby="help-title">
+  <div class="help-head">
+    <h2 id="help-title">Animer une zone de texte en 4 étapes</h2>
+    <button id="help-close" class="ghost small">Fermer</button>
+  </div>
+
+  <ol id="help-app" class="steps">
+    <li>
+      <svg viewBox="0 0 132 88" role="img" aria-label="Menu contextuel de PowerPoint sur une zone de texte">
+        <rect x="8" y="10" width="86" height="56" rx="3" fill="var(--panel)" stroke="var(--muted)"/>
+        <rect x="14" y="22" width="58" height="20" fill="none" stroke="var(--accent)" stroke-dasharray="3 2"/>
+        <text x="19" y="36" font-size="11" font-weight="700" fill="var(--ink)">Bonjour</text>
+        <rect x="62" y="38" width="62" height="42" rx="3" fill="var(--panel)" stroke="var(--muted)"/>
+        <rect x="67" y="44" width="40" height="3" rx="1.5" fill="var(--line)"/>
+        <rect x="64" y="52" width="58" height="11" rx="2" fill="var(--accent)"/>
+        <text x="68" y="60.5" font-size="6.5" fill="var(--accent-ink)">Enregistrer image</text>
+        <rect x="67" y="69" width="32" height="3" rx="1.5" fill="var(--line)"/>
+      </svg>
+      <div><h3>Enregistrer la zone de texte en image</h3>
+        <p>Dans PowerPoint, clic droit sur le bord de la zone de texte à animer, puis « Enregistrer en tant qu'image », au format PNG.</p></div>
+    </li>
+    <li>
+      <svg viewBox="0 0 132 88" role="img" aria-label="Deux fichiers déposés dans l'application">
+        <path d="M12 16h20l7 7v27H12z" fill="var(--panel)" stroke="var(--muted)"/>
+        <text x="15" y="42" font-size="8" font-weight="700" fill="var(--accent)">PPTX</text>
+        <path d="M12 56h20l7 7v17H12z" fill="var(--panel)" stroke="var(--muted)"/>
+        <text x="16.5" y="75" font-size="8" font-weight="700" fill="var(--accent)">PNG</text>
+        <path d="M46 44h20m-6-6 6 6-6 6" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="74" y="14" width="50" height="60" rx="4" fill="var(--panel)" stroke="var(--muted)"/>
+        <rect x="74" y="14" width="50" height="10" rx="4" fill="var(--accent)"/>
+        <rect x="80" y="31" width="38" height="7" rx="2" fill="var(--line)"/>
+        <rect x="80" y="43" width="38" height="7" rx="2" fill="var(--line)"/>
+        <rect x="80" y="57" width="22" height="9" rx="2" fill="var(--accent)"/>
+      </svg>
+      <div><h3>Donner les deux fichiers</h3>
+        <p>Choisir la présentation (.pptx) et l'image (.png). On peut aussi les déposer sur la page, ou coller l'image avec Ctrl+V. Indiquer la diapo et la zone de texte concernées, puis « Analyser ».</p></div>
+    </li>
+    <li>
+      <svg viewBox="0 0 132 88" role="img" aria-label="Lettres mélangées qui se remettent en ordre">
+        <g font-size="15" font-weight="700" fill="var(--ink)">
+          <text x="14" y="30" transform="rotate(-14 14 30)">m</text><text x="34" y="62" transform="rotate(10 34 62)">A</text>
+          <text x="44" y="26" transform="rotate(8 44 26)">i</text><text x="16" y="72" transform="rotate(-6 16 72)">n</text>
+        </g>
+        <path d="M58 44h16m-6-6 6 6-6 6" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="82" y="50" font-size="15" font-weight="700" fill="var(--ink)">Anim</text>
+        <rect x="82" y="56" width="38" height="2" fill="var(--accent)"/>
+      </svg>
+      <div><h3>Régler l'effet</h3>
+        <p>Choisir ordonner ou mélanger, l'unité (lettre, mot, ligne), l'ordre et les durées. « Aperçu » montre le résultat.</p></div>
+    </li>
+    <li>
+      <svg viewBox="0 0 132 88" role="img" aria-label="Fichier téléchargé puis diaporama">
+        <path d="M30 18v26m-10-10 10 10 10-10" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14 54v10h32V54" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="62" y="18" width="60" height="40" rx="3" fill="var(--panel)" stroke="var(--muted)"/>
+        <path d="M86 29v18l15-9z" fill="var(--accent)"/>
+        <path d="M92 58v10m-12 4h24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div><h3>Télécharger et lancer le diaporama</h3>
+        <p>« Télécharger le .pptx animé » crée une copie de la présentation. L'ouvrir dans PowerPoint : l'animation démarre au clic et se règle dans le volet Animations.</p></div>
+    </li>
+  </ol>
+
+  <ol id="help-addin" class="steps plain" hidden>
+    <li><div><h3>Sélectionner la zone de texte</h3><p>Sur la diapo, cliquer sur la zone de texte à animer (une seule, sans remplissage).</p></div></li>
+    <li><div><h3>Analyser</h3><p>« Analyser la zone de texte sélectionnée » découpe le texte en lettres, mots et lignes.</p></div></li>
+    <li><div><h3>Régler l'effet</h3><p>Choisir ordonner ou mélanger, l'unité, l'ordre et les durées. « Aperçu » montre le résultat.</p></div></li>
+    <li><div><h3>Insérer</h3><p>« Insérer la diapo animée » ajoute une copie animée juste après la diapo d'origine, qui reste intacte.</p></div></li>
+  </ol>
+
+  <p class="help-note">Une « zone de texte » est le cadre qui contient le texte sur la diapo. Elle ne doit avoir ni remplissage, ni ombre.
+    Dans le fichier obtenu, le texte d'origine est conservé mais masqué, et les lettres sont des images nommées « PPTAnim ».</p>
+</dialog>
 <script type="module" src="app.js"></script>
 </body>
 </html>
