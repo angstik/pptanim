@@ -1,0 +1,28 @@
+PPT Anim : historique des versions
+==================================
+La version la plus récente est en haut. Le numéro est celui de package.json.
+
+0.2.0 (2026-10-04)
+------------------
+Première version publiée dans ce dépôt : l'application devient une PWA hébergée sur GitHub Pages.
+- Application web installable : manifeste (start_url et scope sur /pptanim/), icônes 192, 512 et
+  maskable, bouton « Installer ».
+- Service worker : mise en cache de toute l'application, fonctionnement hors ligne, avis
+  « nouvelle version » avec rechargement.
+- Publication automatique par GitHub Actions à chaque push sur main (.github/workflows/pages.yml).
+- Build sans dépendance (scripts/build.mjs) qui contrôle les chemins : tout est relatif, rien ne
+  suppose la racine du domaine.
+- Fichiers acceptés par dépôt sur la page et image de la forme par collage (Ctrl+V).
+- Le complément PowerPoint passe par une page dédiée (taskpane.html) ; l'application web ne charge
+  plus office.js.
+- Les images créées dans la diapo s'appellent désormais « PPTAnim … » (auparavant « TextAnim … »).
+
+0.1.0 (2026-10-04)
+------------------
+Prototype livré hors dépôt (patch-v01.zip).
+- Découpage de l'image d'une zone de texte en lettres, mots et lignes, vérifié mot par mot contre le
+  texte de la forme.
+- Effet scrambler (ordonner, mélanger) par lettre, mot ou ligne, dans l'ordre ou aléatoire, avec
+  aperçu.
+- Écriture des animations PowerPoint natives dans le .pptx, à la suite des animations existantes.
+- Deux modes : fichier (pptx + image PNG) et complément PowerPoint.

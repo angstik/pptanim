@@ -1,0 +1,18 @@
+{
+  "name": "pptanim",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "PPT Anim : anime un texte PowerPoint lettre par lettre avec des animations natives (PWA).",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/build.mjs && node scripts/serve.mjs",
+    "test:fixtures": "python3 test/make_fixtures.py",
+    "test:pwa": "node test/pwa.mjs",
+    "test:e2e": "node test/e2e.mjs",
+    "test:check": "python3 test/check.py"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

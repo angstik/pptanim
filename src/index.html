@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPT Anim</title>
+<meta name="description" content="Anime un texte PowerPoint lettre par lettre avec des animations natives.">
+<meta name="theme-color" content="#b5471f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<!-- office.js -->
+<script src="vendor/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1f24; --muted: #646a75; --line: #dcdad4;
+    --accent: #b5471f; --accent-ink: #ffffff; --ok: #1f7a4d; --warn: #9a5b00; --err: #b3261e;
+    --stage-a: #8b9099; --stage-b: #7d828b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191a1d; --panel: #222429; --ink: #eceae6; --muted: #a0a5ae; --line: #353840;
+      --accent: #e8794c; --accent-ink: #1b1108; --ok: #5fcf97; --warn: #e9b458; --err: #ff8a80;
+      --stage-a: #5b606a; --stage-b: #51565f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 14px 14px 32px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  header img { width: 28px; height: 28px; border-radius: 6px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+  #mode { font-size: 12px; color: var(--muted); flex: 1; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .field { min-width: 0; }
+  select, input[type=number], input[type=file] {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+  }
+  input[type=file] { padding: 5px; font-size: 12px; }
+  button {
+    font: inherit; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+    border-radius: 6px; padding: 7px 12px; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--accent); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .notice { font-size: 13px; margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+  #status[data-kind=ok] { color: var(--ok); } #status[data-kind=warn] { color: var(--warn); } #status[data-kind=err] { color: var(--err); }
+  #update { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+  body.drag main { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: 12px; }
+  .stage {
+    position: relative; overflow: hidden; border-radius: 6px; margin-top: 10px;
+    background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 16px 16px;
+  }
+  .stage canvas { display: block; }
+  #preview canvas { position: absolute; }
+  #log { font: 12px/1.5 ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; margin: 0; max-height: 180px; overflow: auto; }
+  footer { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="icons/icon-64.png" alt="">
+    <h1>PPT Anim</h1>
+    <span id="mode">démarrage…</span>
+    <button id="install" class="ghost small" hidden>Installer</button>
+  </header>
+  <div id="update" class="notice" hidden>
+    <span>Une nouvelle version est prête.</span>
+    <button id="reload" class="small">Recharger</button>
+  </div>
+  <p id="status" class="notice" hidden></p>
+
+  <section id="src-addin" hidden>
+    <h2>1. Forme de texte</h2>
+    <button id="analyze-addin">Analyser la forme sélectionnée</button>
+    <p class="hint">Sélectionnez une zone de texte sans remplissage sur la diapo, puis cliquez.</p>
+  </section>
+
+  <section id="src-file" hidden>
+    <h2>1. Fichiers</h2>
+    <div class="grid">
+      <div class="field"><label for="f-pptx">Présentation (.pptx)</label><input id="f-pptx" type="file" accept=".pptx"></div>
+      <div class="field"><label for="f-png">Image de la forme (.png)</label><input id="f-png" type="file" accept="image/png"></div>
+      <div class="field"><label for="s-slide">Diapo</label><select id="s-slide" disabled></select></div>
+      <div class="field"><label for="s-shape">Forme de texte</label><select id="s-shape" disabled></select></div>
+    </div>
+    <div class="row"><button id="analyze-file" disabled>Analyser</button></div>
+    <p class="hint">Image de la forme : dans PowerPoint, clic droit sur la zone de texte, « Enregistrer en tant qu'image », format PNG.
+      Vous pouvez aussi copier la forme et la coller ici (Ctrl+V), ou déposer les deux fichiers sur la page.</p>
+  </section>
+
+  <section id="seg" hidden>
+    <h2>2. Découpage</h2>
+    <div id="seg-info"></div>
+    <div class="stage"><canvas id="seg-canvas"></canvas></div>
+  </section>
+
+  <section id="fx" hidden>
+    <h2>3. Effet</h2>
+    <div class="grid">
+      <div class="field"><label for="o-mode">Scrambler</label>
+        <select id="o-mode"><option value="order">Ordonner (entrée)</option><option value="shuffle">Mélanger</option></select></div>
+      <div class="field"><label for="o-unit">Unité</label>
+        <select id="o-unit"><option value="letter">Lettre</option><option value="word">Mot</option><option value="line">Ligne</option></select></div>
+      <div class="field"><label for="o-order">Ordre</label>
+        <select id="o-order"><option value="seq">Dans l'ordre</option><option value="random">Aléatoire</option></select></div>
+      <div class="field"><label for="o-curved">Trajectoire</label>
+        <select id="o-curved"><option value="1">Courbe</option><option value="0">Droite</option></select></div>
+      <div class="field"><label for="o-dur">Durée par unité (ms)</label><input id="o-dur" type="number" min="100" max="5000" step="50" value="600"></div>
+      <div class="field"><label for="o-stagger">Décalage (ms)</label><input id="o-stagger" type="number" min="0" max="1000" step="10" value="40"></div>
+    </div>
+    <div class="row"><button id="play" class="ghost">Aperçu</button><span id="fx-info" class="hint" style="margin:0"></span></div>
+    <div id="preview" class="stage"></div>
+  </section>
+
+  <section id="out" hidden>
+    <h2>4. Générer</h2>
+    <div id="out-addin" hidden>
+      <div class="grid">
+        <div class="field"><label for="o-format">Mise en forme à l'insertion</label>
+          <select id="o-format"><option value="KeepSourceFormatting">Conserver celle de la diapo</option><option value="UseDestinationTheme">Thème de la présentation</option></select></div>
+      </div>
+      <div class="row"><button id="go-addin">Insérer la diapo animée</button></div>
+      <p class="hint">La diapo animée est insérée juste après l'originale, qui n'est pas modifiée.</p>
+    </div>
+    <div id="out-file" hidden>
+      <div class="row" style="margin-top:0"><button id="go-file">Télécharger le .pptx animé</button></div>
+      <p class="hint">La diapo choisie est modifiée dans une copie du fichier ; l'original n'est pas touché. Rien n'est envoyé sur Internet.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Journal</h2>
+    <pre id="log"></pre>
+  </section>
+  <footer>PPT Anim <span id="version">__APP_VERSION__</span> · <span id="offline">hors ligne : non disponible</span></footer>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
