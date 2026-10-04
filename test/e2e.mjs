@@ -25,6 +25,12 @@ const cases = [
   { name: 'b-ordonner-lettre', deck: 'b.pptx', mode: 'order', unit: 'letter', order: 'random', curved: '1' },
   { name: 'b-melanger-lettre-droit', deck: 'b.pptx', mode: 'shuffle', unit: 'letter', order: 'seq', curved: '0' },
   { name: 'b-ordonner-ligne', deck: 'b.pptx', mode: 'order', unit: 'line', order: 'seq', curved: '0' },
+  // Emoji qui pousse : les trois façons de regrouper les animations, puis un tirage tout aléatoire
+  { name: 'b-emoji-image', deck: 'b.pptx', mode: 'emoji', group: 'image', total: '6' },
+  { name: 'b-emoji-separe', deck: 'b.pptx', mode: 'emoji', group: 'split', total: '6' },
+  { name: 'b-emoji-unique', deck: 'b.pptx', mode: 'emoji', group: 'single', total: '6' },
+  { name: 'a-emoji-aleatoire', deck: 'a.pptx', mode: 'emoji', group: 'image', total: '4.5', mean: '0.8', sd: '0.5',
+    series: ['🌱🌸', '', '★'], line: 'random', word: 'random', letter: 'random' },
 ];
 
 const browser = await chromium.launch();
@@ -43,12 +49,20 @@ for (const c of cases) {
   await page.click('#analyze-file');
   await page.waitForSelector('#fx:not([hidden])');
   await page.selectOption('#o-mode', c.mode);
-  await page.selectOption('#o-unit', c.unit);
-  await page.selectOption('#o-order', c.order);
-  await page.selectOption('#o-curved', c.curved);
+  if (c.mode === 'emoji') {
+    await page.selectOption('#e-group', c.group);
+    for (const [id, v] of [['#e-total', c.total], ['#e-mean', c.mean], ['#e-sd', c.sd]]) if (v) await page.fill(id, v);
+    if (c.series) for (let i = 0; i < 3; i++) await page.fill(`#e-s${i + 1}`, c.series[i]);
+    for (const [id, v] of [['#e-line', c.line], ['#e-word', c.word], ['#e-letter', c.letter]]) if (v) await page.selectOption(id, v);
+    await page.dispatchEvent('#e-total', 'change');
+  } else {
+    await page.selectOption('#o-unit', c.unit);
+    await page.selectOption('#o-order', c.order);
+    await page.selectOption('#o-curved', c.curved);
+  }
   const info = await page.textContent('#seg-info');
   await page.click('#play');
-  await page.waitForTimeout(c.mode === 'order' ? 900 : 500);
+  await page.waitForTimeout(c.mode === 'order' ? 900 : c.mode === 'emoji' ? 2600 : 500);
   await page.screenshot({ path: path.join(out, `${c.name}-volet.png`), fullPage: true });
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#go-file')]);
   await dl.saveAs(path.join(out, `${c.name}.pptx`));

@@ -2,6 +2,22 @@ PPT Anim : historique des versions
 ==================================
 La version la plus récente est en haut. Le numéro est celui de package.json.
 
+0.3.0 (2026-10-04)
+------------------
+Nouvel effet : emoji qui pousse.
+- 1 à 3 séries de 1 à 3 emoji ; pour chaque lettre, une série est tirée au hasard. L'emoji part de très
+  petit, grandit depuis le bas de la ligne, passe d'un emoji au suivant en fondu, puis se fond dans la
+  lettre. Taille identique pour toute une ligne.
+- Durée de chaque lettre tirée selon une moyenne et un écart-type ; durée totale exacte, dont découle
+  le nombre d'animations simultanées (affiché).
+- Ordre réglable à trois niveaux : lignes, mots, lettres (dans l'ordre ou aléatoire). Bouton
+  « Nouveau tirage ».
+- Les emoji sont rangés hors de la diapo et amenés par l'animation : la diapo reste propre hors
+  diaporama (édition, impression, PDF).
+- Choix du regroupement des animations dans PowerPoint : une par image, entrée et sortie séparées,
+  ou une seule pour tout (expérimental, à valider dans PowerPoint).
+- Un même emoji n'est enregistré qu'une fois dans le fichier, quel que soit le nombre de lettres.
+
 0.2.1 (2026-10-04)
 ------------------
 - Vocabulaire : « zone de texte » remplace « forme » dans tous les libellés et messages.

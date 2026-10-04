@@ -1,7 +1,7 @@
 // Effet « scrambler » : calcule, pour chaque unité, d'où elle part et où elle arrive.
 // Tout est exprimé en pixels de l'image source ; la conversion vers la diapo se fait ailleurs.
 
-function rng(seed) {
+export function rng(seed) {
   let a = (seed >>> 0) || 1;
   return () => {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -11,7 +11,7 @@ function rng(seed) {
   };
 }
 
-function shuffled(n, rand) {
+export function shuffled(n, rand) {
   const p = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));

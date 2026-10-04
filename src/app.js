@@ -3,13 +3,15 @@
 
 import { segment, unitsOf, cropUnit } from './core/segment.js';
 import { scramblePlan, orderKeyframes, curvePoint, ease } from './core/effects.js';
+import { emojiPlan, parseSeries } from './core/emoji.js';
+import { scrambleTimeline, emojiTimeline } from './core/timing.js';
 import { createEngine } from './core/pptx.js';
 import { initPwa } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
 const engine = createEngine({ DOMParser, XMLSerializer });
 const EMU = 12700; // par point
-const state = { addin: false, img: null, seg: null, text: '', src: null, file: null };
+const state = { addin: false, img: null, seg: null, text: '', src: null, file: null, seed: 1, color: '#ffffff' };
 
 function log(msg) {
   const t = new Date().toLocaleTimeString('fr-FR');
@@ -57,6 +59,7 @@ async function toPng(crop) {
 const b64ToBlob = (b64, type) => new Blob([Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))], { type });
 
 // ---------- Options ----------
+const seconds = (id, fallback) => { const v = parseFloat($(id).value); return (Number.isFinite(v) ? v : fallback) * 1000; };
 const opts = () => ({
   mode: $('o-mode').value,
   unit: $('o-unit').value,
@@ -64,12 +67,64 @@ const opts = () => ({
   curved: $('o-curved').value === '1',
   duration: Math.max(100, +$('o-dur').value || 600),
   stagger: Math.max(0, +$('o-stagger').value || 0),
+  // emoji qui pousse
+  series: parseSeries([$('e-s1').value, $('e-s2').value, $('e-s3').value]),
+  mean: Math.max(100, seconds('e-mean', 1.2)),
+  sd: Math.max(0, seconds('e-sd', 0)),
+  total: Math.max(100, seconds('e-total', 6)),
+  orderLine: $('e-line').value, orderWord: $('e-word').value, orderLetter: $('e-letter').value,
+  grouping: $('e-group').value,
+  seed: state.seed,
 });
+// Travail à faire selon l'effet choisi : unités animées et plan d'animation.
 function current() {
   const o = opts();
+  if (o.mode === 'emoji') return { kind: 'emoji', o, units: state.seg.letters, plan: emojiPlan(state.seg, o) };
   const units = unitsOf(state.seg, o.unit);
-  const plan = scramblePlan(units, state.seg, o);
-  return { o, units, plan };
+  return { kind: 'scramble', o, units, plan: scramblePlan(units, state.seg, o) };
+}
+const timelineOf = (job) => (job.kind === 'emoji'
+  ? emojiTimeline(job.plan, job.o.grouping)
+  : scrambleTimeline(job.plan, orderKeyframes, job.o.curved));
+
+// ---------- Emoji ----------
+// Chaque emoji est dessiné une fois par l'appareil, recadré au plus juste et posé en bas d'un carré.
+const glyphs = new Map();
+function glyph(ch) {
+  const key = `${state.color}|${ch}`;
+  if (glyphs.has(key)) return glyphs.get(key);
+  const R = 256;
+  const big = document.createElement('canvas');
+  big.width = big.height = 2 * R;
+  const g = big.getContext('2d', { willReadFrequently: true });
+  g.font = `${R}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Symbol", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = state.color; // pour les symboles sans couleur propre (★, ✿…) : la couleur du texte
+  g.fillText(ch, R, R);
+  const d = g.getImageData(0, 0, 2 * R, 2 * R).data;
+  let x0 = 2 * R, y0 = 2 * R, x1 = -1, y1 = -1;
+  for (let y = 0; y < 2 * R; y++) for (let x = 0; x < 2 * R; x++) {
+    if (d[(y * 2 * R + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) throw new Error(`« ${ch} » ne peut pas être dessiné sur cet appareil.`);
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, k = R / Math.max(w, h);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = R;
+  const c = canvas.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(big, x0, y0, w, h, (R - w * k) / 2, R - h * k, w * k, h * k);
+  const out = { canvas, url: canvas.toDataURL('image/png'), png: null };
+  glyphs.set(key, out);
+  return out;
+}
+// Couleur dominante du texte, pour les symboles monochromes.
+function textColor(img) {
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let p = 0; p < img.data.length; p += 16) {
+    if (img.data[p + 3] > 200) { r += img.data[p]; g += img.data[p + 1]; b += img.data[p + 2]; n++; }
+  }
+  return n ? `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})` : '#ffffff';
 }
 
 // ---------- Découpage ----------
@@ -77,6 +132,7 @@ function analyze(img, text) {
   const t0 = performance.now();
   const seg = segment(img, text);
   state.img = img; state.seg = seg; state.text = text;
+  state.color = textColor(img);
   const ms = Math.round(performance.now() - t0);
   const counts = `${seg.letters.length} ${seg.aligned ? 'lettres' : 'blocs'}, ${seg.words.length} mots, ${seg.lines.length} ligne${seg.lines.length > 1 ? 's' : ''}`;
   if (seg.matched) {
@@ -107,7 +163,7 @@ function drawSegmentation() {
   g.drawImage(src, 0, 0, cv.width, cv.height);
   g.lineWidth = Math.max(1, dpr);
   const s = k * dpr;
-  unitsOf(seg, $('o-unit').value).forEach((u, i) => {
+  unitsOf(seg, $('o-mode').value === 'emoji' ? 'letter' : $('o-unit').value).forEach((u, i) => {
     g.strokeStyle = i % 2 ? '#ffd166' : '#06d6a0';
     g.strokeRect(u.x0 * s, u.y0 * s, (u.x1 - u.x0 + 1) * s, (u.y1 - u.y0 + 1) * s);
   });
@@ -116,22 +172,40 @@ function drawSegmentation() {
 // ---------- Aperçu ----------
 function buildPreview(play) {
   const { img, seg } = state;
-  const { o, units, plan } = current();
+  const job = current();
+  const { units, plan } = job;
   const stage = $('preview');
   stage.textContent = '';
   const pad = 0.8 * seg.maxLineH;
   const k = (stage.clientWidth || 600) / (img.width + 2 * pad);
   stage.style.height = `${(img.height + 2 * pad) * k}px`;
   const tr = (p) => `translate(${p.x * k}px, ${p.y * k}px)`;
+  const place = (el, x, y, w, h) => {
+    el.style.left = `${(x + pad) * k}px`; el.style.top = `${(y + pad) * k}px`;
+    el.style.width = `${w * k}px`; el.style.height = `${h * k}px`;
+    stage.appendChild(el);
+  };
   units.forEach((u, i) => {
     const crop = cropUnit(img, seg, u);
     const c = cropCanvas(crop);
-    c.style.left = `${(crop.x + pad) * k}px`; c.style.top = `${(crop.y + pad) * k}px`;
-    c.style.width = `${crop.w * k}px`; c.style.height = `${crop.h * k}px`;
-    stage.appendChild(c);
+    place(c, crop.x, crop.y, crop.w, crop.h);
     if (!play) return;
     const it = plan.items[i];
-    if (plan.mode === 'order') {
+    if (job.kind === 'emoji') {
+      c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: it.dur - it.grow, delay: it.start + it.grow, fill: 'both', easing: 'linear' });
+      for (const e of it.emojis) {
+        const el = document.createElement('img');
+        el.src = glyph(e.ch).url;
+        el.alt = '';
+        place(el, it.box.cx - it.box.size / 2, it.box.bottom - it.box.size, it.box.size, it.box.size);
+        const len = e.end - e.a, timing = { duration: len, delay: it.start + e.a, fill: 'both', easing: 'linear' };
+        el.animate(e.kf.map((f) => ({ offset: Math.min(1, (f.t - e.a) / len), transform: `scale(${f.s})` })), timing);
+        el.animate([
+          { offset: 0, opacity: 0 }, { offset: e.fadeIn / len, opacity: 1 },
+          { offset: (e.b - e.a) / len, opacity: 1 }, { offset: 1, opacity: 0 },
+        ], timing);
+      }
+    } else if (plan.mode === 'order') {
       c.animate(orderKeyframes(it).map((p) => ({ offset: p.t, transform: tr(p) })),
         { duration: it.delay + it.dur, fill: 'both', easing: 'linear' });
     } else {
@@ -139,22 +213,51 @@ function buildPreview(play) {
       c.animate(kf, { duration: it.dur, delay: it.delay, fill: 'both', easing: 'linear' });
     }
   });
-  $('fx-info').textContent = `${units.length} animations, ${(plan.total / 1000).toFixed(1)} s au total`;
-  return { o, units, plan };
+  if (job.kind === 'emoji') {
+    const lines = { single: 1, image: plan.objects, split: 2 * plan.objects - units.length }[job.o.grouping];
+    $('fx-info').textContent = `${units.length} lettres, ${(plan.total / 1000).toFixed(2)} s au total, environ ${plan.parallel.toFixed(1)} animations de front, ` +
+      `${lines} ligne${lines > 1 ? 's' : ''} dans le volet Animations`;
+  } else {
+    $('fx-info').textContent = `${units.length} animations, ${(plan.total / 1000).toFixed(1)} s au total`;
+  }
+  return job;
 }
 function refresh() {
+  const emoji = $('o-mode').value === 'emoji';
+  $('fx-scramble').hidden = emoji;
+  $('fx-emoji').hidden = !emoji;
+  $('reroll').hidden = !emoji;
   if (!state.seg) return;
-  drawSegmentation();
-  buildPreview(false);
+  try {
+    drawSegmentation();
+    buildPreview(false);
+  } catch (e) {
+    $('fx-info').textContent = `Réglage incomplet : ${e.message}`;
+  }
 }
 
-async function buildCrops(units) {
-  const crops = [];
-  for (const u of units) {
+// Images à placer dans la diapo : les lettres (ou mots, lignes), puis les emoji, rangés hors de la diapo.
+async function buildPictures(job) {
+  const pics = [];
+  for (const u of job.units) {
     const c = cropUnit(state.img, state.seg, u);
-    crops.push({ x: c.x, y: c.y, w: c.w, h: c.h, png: await toPng(c), label: (u.text || '').slice(0, 20) });
+    pics.push({ x: c.x, y: c.y, w: c.w, h: c.h, png: await toPng(c), label: (u.text || '').slice(0, 20) });
   }
-  return crops;
+  if (job.kind === 'emoji') {
+    for (const it of job.plan.items) {
+      it.pic = it.index;
+      for (const e of it.emojis) {
+        const g = glyph(e.ch);
+        if (!g.png) g.png = new Uint8Array(await (await new Promise((r) => g.canvas.toBlob(r, 'image/png'))).arrayBuffer());
+        e.pic = pics.length;
+        pics.push({
+          x: it.box.cx - it.box.size / 2, y: it.box.bottom - it.box.size, w: it.box.size, h: it.box.size,
+          png: g.png, mediaKey: `emoji:${e.ch}`, park: true, label: e.ch,
+        });
+      }
+    }
+  }
+  return pics;
 }
 
 // ---------- Mode complément ----------
@@ -193,8 +296,8 @@ async function analyzeSelection() {
 }
 
 async function generateAddin() {
-  const { o, units, plan } = current();
-  const crops = await buildCrops(units);
+  const job = current();
+  const pictures = await buildPictures(job);
   await PowerPoint.run(async (ctx) => {
     const src = state.src;
     const slide = ctx.presentation.slides.getItem(src.slideId);
@@ -206,7 +309,7 @@ async function generateAddin() {
     const sl = await engine.readSlide(zip, deck.slides[0].path);
     const shape = engine.findShape(sl, src.ref);
     if (!shape) throw new Error(`zone de texte « ${src.ref.name} » introuvable dans la diapo exportée (zones présentes : ${sl.shapes.map((s) => `${s.id}:${s.name}`).join(', ')}).`);
-    const res = await engine.animate(zip, { deck, slide: sl, shape, box: shape.box || src.ref.box, img: state.img, crops, plan, curved: o.curved });
+    const res = await engine.animate(zip, { deck, slide: sl, shape, box: shape.box || src.ref.box, img: state.img, pictures, timeline: timelineOf(job) });
     const out = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
     ctx.presentation.insertSlidesFromBase64(out, { formatting: $('o-format').value, targetSlideId: src.slideId });
     await ctx.sync();
@@ -259,13 +362,13 @@ async function analyzeFile() {
 }
 async function generateFile() {
   const f = state.file;
-  const { o, units, plan } = current();
-  const crops = await buildCrops(units);
+  const job = current();
+  const pictures = await buildPictures(job);
   const zip = await JSZip.loadAsync(f.bytes); // on repart toujours du fichier d'origine
   const deck = await engine.readDeck(zip);
   const sl = await engine.readSlide(zip, deck.slides[f.slideIndex].path);
   const shape = sl.shapes[f.shapeIndex];
-  const res = await engine.animate(zip, { deck, slide: sl, shape, img: state.img, crops, plan, curved: o.curved });
+  const res = await engine.animate(zip, { deck, slide: sl, shape, img: state.img, pictures, timeline: timelineOf(job) });
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -353,7 +456,10 @@ async function start() {
   $('analyze-file').onclick = (e) => guard('Analyse', analyzeFile, e.currentTarget);
   $('go-file').onclick = (e) => guard('Génération', generateFile, e.currentTarget);
   $('play').onclick = () => guard('Aperçu', async () => buildPreview(true));
-  for (const id of ['o-mode', 'o-unit', 'o-order', 'o-curved', 'o-dur', 'o-stagger']) $(id).onchange = refresh;
+  for (const id of ['o-mode', 'o-unit', 'o-order', 'o-curved', 'o-dur', 'o-stagger',
+    'e-s1', 'e-s2', 'e-s3', 'e-mean', 'e-sd', 'e-total', 'e-line', 'e-word', 'e-letter', 'e-group']) $(id).onchange = refresh;
+  $('reroll').onclick = () => { state.seed = (state.seed * 7919 + 13) % 1000003; guard('Aperçu', async () => buildPreview(true)); };
+  refresh();
   let lastW = window.innerWidth;
   window.addEventListener('resize', () => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; refresh(); } });
 }

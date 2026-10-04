@@ -22,6 +22,52 @@ def check(cond, msg):
     return cond
 
 
+# Durée totale attendue par cas (secondes), telle que réglée dans e2e.mjs
+TOTALS = {"b-emoji-image": 6.0, "b-emoji-separe": 6.0, "b-emoji-unique": 6.0, "a-emoji-aleatoire": 4.5}
+EXPECTED_LINES = {"b-emoji-unique": 1}
+
+
+def emoji_checks(name, sld, new, mine, rel, ns):
+    """Contrôles propres à l'effet emoji : images rangées hors diapo, fichiers partagés, durée totale exacte."""
+    stem = name.replace(".pptx", "")
+    parked = [p for p in new if int(p.find("p:spPr/a:xfrm/a:off", ns).get("x")) < 0]
+    letters = [p for p in new if p not in parked]
+    check(len(letters) == 37, f"{name}: {len(letters)} images de lettres, 37 attendues")
+    for p in parked:
+        off, ext = p.find("p:spPr/a:xfrm/a:off", ns), p.find("p:spPr/a:xfrm/a:ext", ns)
+        check(int(off.get("x")) + int(ext.get("cx")) < 0, f"{name}: emoji rangé mais encore visible sur la diapo")
+        check(abs(int(ext.get("cx")) - int(ext.get("cy"))) < 0.01 * int(ext.get("cx")), f"{name}: emoji non carré")
+    files = {rel[p.find("p:blipFill/a:blip", ns).get(f"{{{R}}}embed")] for p in parked}
+    check(len(files) <= 9 and len(files) < len(parked), f"{name}: {len(files)} fichiers pour {len(parked)} emoji (partage attendu)")
+    # Même taille d'emoji sur une même ligne
+    by_line = {}
+    for p in parked:
+        by_line.setdefault(p.find("p:spPr/a:xfrm/a:off", ns).get("y"), set()).add(p.find("p:spPr/a:xfrm/a:ext", ns).get("cx"))
+    check(all(len(v) == 1 for v in by_line.values()), f"{name}: tailles d'emoji différentes sur une même ligne")
+
+    # Fin de la dernière animation = durée totale demandée
+    def delay(ctn):
+        c = ctn.find("p:stCondLst/p:cond", ns)
+        return int(c.get("delay")) if c is not None and c.get("delay", "").isdigit() else 0
+    end = 0
+    for e in mine:
+        for b in e.xpath("./p:childTnLst//p:cBhvr/p:cTn", namespaces=ns):
+            end = max(end, delay(e) + delay(b) + int(b.get("dur")))
+    total = TOTALS[stem] * 1000
+    check(abs(end - total) <= 2, f"{name}: fin à {end} ms, durée totale demandée {total:.0f} ms")
+    if stem in EXPECTED_LINES:
+        check(len(mine) == EXPECTED_LINES[stem], f"{name}: {len(mine)} animations, {EXPECTED_LINES[stem]} attendue(s)")
+    # Chaque lettre apparaît une fois ; chaque emoji apparaît puis disparaît
+    vis = {}
+    for st in sld.xpath(".//p:set[p:cBhvr/p:attrNameLst/p:attrName='style.visibility']", namespaces=ns):
+        spid = st.find("p:cBhvr/p:tgtEl/p:spTgt", ns).get("spid")
+        vis.setdefault(spid, []).append(st.find("p:to/p:strVal", ns).get("val"))
+    ids = lambda pics: [p.find("p:nvPicPr/p:cNvPr", ns).get("id") for p in pics]
+    check(all(vis.get(i) == ["visible"] for i in ids(letters)), f"{name}: une lettre n'apparaît pas exactement une fois")
+    check(all(sorted(vis.get(i, [])) == ["hidden", "visible"] for i in ids(parked)), f"{name}: un emoji n'apparaît pas puis ne disparaît pas")
+    return f"{len(parked)} emoji dans {len(files)} fichiers, fin à {end} ms"
+
+
 def one(path, source, before_png):
     name = path.name
     z = zipfile.ZipFile(path)
@@ -56,12 +102,18 @@ def one(path, source, before_png):
     ct = z.read("[Content_Types].xml").decode()
     check('Extension="png"' in ct, f"{name}: type png non déclaré")
 
-    # Chaque image de lettre est animée une fois, la forme d'origine est masquée
+    # Chaque image est animée, un seul déclencheur au clic, la zone de texte d'origine est masquée
     new_ids = {p.find("p:nvPicPr/p:cNvPr", ns).get("id") for p in new}
     effects = sld.xpath(".//p:cTn[@presetClass]", namespaces=ns)
     mine = [e for e in effects if e.xpath(".//p:spTgt/@spid", namespaces=ns)[0] in new_ids]
-    check(len(mine) == len(new) > 0, f"{name}: {len(mine)} animations pour {len(new)} images")
+    animated = {t for e in mine for t in e.xpath(".//p:spTgt/@spid", namespaces=ns)}
+    check(animated == new_ids and len(new) > 0, f"{name}: {len(animated)} images animées sur {len(new)}")
     check(sum(e.get("nodeType") == "clickEffect" for e in mine) == 1, f"{name}: il faut un seul déclencheur au clic")
+    emoji = "emoji" in name
+    if not emoji:
+        check(len(mine) == len(new), f"{name}: {len(mine)} animations pour {len(new)} images")
+    else:
+        extra = emoji_checks(name, sld, new, mine, rel, ns)
     titre = sld.xpath(".//p:sp/p:nvSpPr/p:cNvPr[@name='Titre']", namespaces=ns)[0]
     check(titre.get("hidden") == "1", f"{name}: forme d'origine non masquée")
 
@@ -89,7 +141,8 @@ def one(path, source, before_png):
     worst = max(ImageStat.Stat(diff).extrema, key=lambda e: e[1])[1]
     diff.point(lambda v: min(255, v * 4)).save(path.with_name(path.stem + "-diff.png"))
     check(mean < 1.0, f"{name}: rendu différent de l'original (écart moyen {mean:.2f})")
-    print(f"{name}: {len(new)} images, {len(mine)} animations + {len(old_src)} existantes, écart de rendu moyen {mean:.3f} (max {worst})")
+    print(f"{name}: {len(new)} images, {len(mine)} animations + {len(old_src)} existantes, écart de rendu moyen {mean:.3f} (max {worst})"
+          + (f" | {extra}" if emoji else ""))
 
 
 def main():

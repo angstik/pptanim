@@ -1,8 +1,7 @@
 // Modification d'un fichier .pptx (ouvert avec JSZip) : remplace une forme de texte par des images
 // de lettres et ajoute leurs animations à la chronologie de la diapo, sans toucher au reste.
 
-import { NS, wrap, orderEffect, shuffleEffect, clickGroup, mainSeq, emptyTiming } from './timing.js';
-import { orderKeyframes } from './effects.js';
+import { NS, wrap, clickGroup, mainSeq, emptyTiming } from './timing.js';
 
 const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
@@ -135,25 +134,27 @@ export function createEngine({ DOMParser, XMLSerializer }) {
   }
 
   /**
-   * @param zip      JSZip du pptx
-   * @param o.deck   résultat de readDeck
-   * @param o.slide  résultat de readSlide
-   * @param o.shape  forme source (élément de slide.shapes)
-   * @param o.box    cadre de la forme en EMU (par défaut celui du XML)
-   * @param o.img    { width, height } de l'image source en pixels
-   * @param o.crops  [{ x, y, w, h (pixels), png: Uint8Array, label }] dans l'ordre des unités
-   * @param o.plan   résultat de scramblePlan
+   * @param zip        JSZip du pptx
+   * @param o.deck     résultat de readDeck
+   * @param o.slide    résultat de readSlide
+   * @param o.shape    zone de texte source (élément de slide.shapes)
+   * @param o.box      cadre de la zone en EMU (par défaut celui du XML)
+   * @param o.img      { width, height } de l'image source en pixels
+   * @param o.pictures [{ x, y, w, h (pixels de l'image source), png: Uint8Array, label, mediaKey?, park? }]
+   *                   mediaKey : les images de même clé partagent un seul fichier ;
+   *                   park : l'image est rangée hors de la diapo, l'animation l'amène à sa place
+   * @param o.timeline (ctx) => XML des effets, ctx = { nextId, spids, fx, fy, ax, ay }
    */
   async function animate(zip, o) {
-    const { deck, slide, shape, img, crops, plan } = o;
+    const { deck, slide, shape, img, pictures } = o;
     const doc = slide.doc;
     const b = o.box || shape.box;
     if (!b) throw new Error("Position de la zone de texte inconnue (espace réservé hérité du masque). Déplacez-la légèrement dans PowerPoint puis recommencez.");
     const kx = b.cx / img.width, ky = b.cy / img.height; // EMU par pixel
     const fx = (px) => (px * kx) / deck.size.cx, fy = (px) => (px * ky) / deck.size.cy;
-    const frac = (p) => ({ x: fx(p.x), y: fy(p.y) });
+    const ax = (px) => (b.x + px * kx) / deck.size.cx, ay = (px) => (b.y + px * ky) / deck.size.cy;
 
-    // 1. Images dans le paquet + relations
+    // 1. Images dans le paquet + relations (un seul fichier par clé partagée)
     const relsPath = relsPathOf(slide.path);
     const rels = parse(await text(zip, relsPath), relsPath);
     const used = new Set(all(rels, REL_NS, 'Relationship').map((r) => r.getAttribute('Id')));
@@ -161,8 +162,11 @@ export function createEngine({ DOMParser, XMLSerializer }) {
     const nextRid = () => { do rn++; while (used.has(`rId${rn}`)); used.add(`rId${rn}`); return `rId${rn}`; };
     const tag = o.tag || `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
     const mediaDir = resolve(slide.path, '../media/x').replace(/x$/, '');
-    const rids = crops.map((c, i) => {
-      const name = `pptanim-${tag}-${String(i + 1).padStart(3, '0')}.png`;
+    const shared = new Map();
+    let files = 0;
+    const rids = pictures.map((c) => {
+      if (c.mediaKey && shared.has(c.mediaKey)) return shared.get(c.mediaKey);
+      const name = `pptanim-${tag}-${String(++files).padStart(3, '0')}.png`;
       zip.file(mediaDir + name, c.png);
       const rid = nextRid();
       const r = rels.createElementNS(REL_NS, 'Relationship');
@@ -170,6 +174,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
       r.setAttribute('Type', IMG_REL);
       r.setAttribute('Target', `../media/${name}`);
       rels.documentElement.appendChild(r);
+      if (c.mediaKey) shared.set(c.mediaKey, rid);
       return rid;
     });
     zip.file(relsPath, serialize(rels));
@@ -184,19 +189,22 @@ export function createEngine({ DOMParser, XMLSerializer }) {
       zip.file(ctPath, serialize(ct));
     }
 
-    // 2. Images de lettres juste au-dessus de la forme d'origine, qui est masquée
+    // 2. Images juste au-dessus de la zone de texte d'origine, qui est masquée
     let maxId = Math.max(0, ...all(doc, NS.p, 'cNvPr').map((n) => +n.getAttribute('id') || 0));
     const spids = [];
     let anchor = shape.el;
-    crops.forEach((c, i) => {
+    pictures.forEach((c, i) => {
       const id = ++maxId;
       spids.push(id);
       const name = `PPTAnim ${shape.name} ${String(i + 1).padStart(3, '0')}${c.label ? ' ' + c.label : ''}`;
+      const cx = Math.round(c.w * kx), cy = Math.round(c.h * ky);
+      // Image rangée : à gauche de la diapo, à la hauteur de sa ligne, pour ne pas apparaître hors diaporama
+      const x = c.park ? -Math.round(cx * 1.25) : Math.round(b.x + c.x * kx);
       const xml =
         `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${esc(name)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
         `<p:blipFill><a:blip r:embed="${rids[i]}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
-        `<p:spPr><a:xfrm><a:off x="${Math.round(b.x + c.x * kx)}" y="${Math.round(b.y + c.y * ky)}"/>` +
-        `<a:ext cx="${Math.round(c.w * kx)}" cy="${Math.round(c.h * ky)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+        `<p:spPr><a:xfrm><a:off x="${x}" y="${Math.round(b.y + c.y * ky)}"/>` +
+        `<a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
       const pic = fragment(doc, xml)[0];
       anchor.parentNode.insertBefore(pic, anchor.nextSibling);
       anchor = pic;
@@ -204,25 +212,14 @@ export function createEngine({ DOMParser, XMLSerializer }) {
     if (o.hideOriginal !== false) all(shape.el, NS.p, 'cNvPr')[0].setAttribute('hidden', '1');
 
     // 3. Animations ajoutées à la fin de la séquence principale
-    const order = [...plan.items].sort((p, q) => p.delay - q.delay || p.index - q.index);
-    const effects = (nextId) =>
-      order.map((it, k) => {
-        const nodeType = k === 0 ? 'clickEffect' : 'withEffect';
-        const spid = spids[it.index];
-        if (plan.mode === 'order') {
-          const kf = orderKeyframes(it).map((p) => ({ t: p.t, x: fx(p.x), y: fy(p.y) }));
-          return orderEffect({ nextId, spid, kf, total: Math.round(it.delay + it.dur), nodeType });
-        }
-        return shuffleEffect({
-          nextId, spid, off: frac(it.off), c1: frac(it.c1), c2: frac(it.c2),
-          curved: o.curved !== false, delay: Math.round(it.delay), dur: Math.round(it.dur), nodeType,
-        });
-      }).join('');
     const seqs = ensureMainSeqs(doc);
-    for (const s of seqs.targets) s.list.appendChild(fragment(doc, clickGroup({ nextId: s.nextId, effects }))[0]);
+    for (const s of seqs.targets) {
+      const effects = (nextId) => o.timeline({ nextId, spids, fx, fy, ax, ay });
+      s.list.appendChild(fragment(doc, clickGroup({ nextId: s.nextId, effects }))[0]);
+    }
 
     zip.file(slide.path, serialize(doc));
-    return { pictures: crops.length, timingCreated: seqs.created, existingEffects: seqs.targets[0].existing };
+    return { pictures: pictures.length, files, timingCreated: seqs.created, existingEffects: seqs.targets[0].existing };
   }
 
   return { readDeck, readSlide, findShape, animate };

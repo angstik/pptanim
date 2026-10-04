@@ -6,8 +6,15 @@ des animations déjà présentes, et se règlent ensuite dans le volet Animation
 
 Application publiée : <https://angstik.github.io/pptanim/>
 
-Effet disponible : le scrambler (ordonner ou mélanger), par lettre, par mot ou par ligne, dans l'ordre ou
-aléatoire. Tout le traitement se fait dans le navigateur : aucun fichier n'est envoyé sur Internet.
+Effets disponibles :
+
+- **Scrambler** (ordonner ou mélanger), par lettre, par mot ou par ligne, dans l'ordre ou aléatoire.
+- **Emoji qui pousse** : à l'emplacement de chaque lettre, un emoji grandit depuis la ligne, passe
+  éventuellement par un ou deux autres emoji en fondu, puis se fond dans la lettre. On règle les séries
+  d'emoji, la durée d'une lettre (moyenne et écart-type), la durée totale exacte et l'ordre des lignes,
+  des mots et des lettres.
+
+Tout le traitement se fait dans le navigateur : aucun fichier n'est envoyé sur Internet.
 
 ## Utilisation
 
@@ -31,6 +38,10 @@ ensuite hors ligne.
 - Démarrage : « au clic » pour la première lettre, « avec la précédente » pour les autres ; le reste se
   règle dans le volet Animations (sélectionner toutes les lignes « PPTAnim » pour les déplacer).
 - Le texte devient des images : la zone de texte d'origine est conservée, masquée, pour pouvoir recommencer.
+- Emoji qui pousse : les emoji sont dessinés par l'appareil qui génère le fichier (leur style en dépend),
+  puis intégrés comme images. En mode édition, ils sont rangés à gauche de la diapo, hors du cadre.
+  Le regroupement « une seule animation pour tout » est expérimental : PowerPoint associe normalement
+  une animation à un seul objet.
 - Le collage direct d'une zone de texte copiée depuis PowerPoint dépend de ce que PowerPoint place dans le
   presse-papiers (image PNG à fond transparent attendue) ; ce point n'a pas été vérifié avec PowerPoint.
 

@@ -81,5 +81,119 @@ export function emptyTiming() {
   return `<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>${mainSeq()}</p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>`;
 }
 
+// ---------- Chronologies complètes ----------
+// ctx = { nextId, spids, fx, fy, ax, ay } : identifiants, numéros de formes dans l'ordre des images,
+// conversions pixels → fractions de diapo (fx, fy : longueurs ; ax, ay : positions absolues).
+
+/** Scrambler : un effet par unité, le premier au clic, les autres avec lui. */
+export function scrambleTimeline(plan, keyframesOf, curved) {
+  return ({ nextId, spids, fx, fy }) => {
+    const frac = (p) => ({ x: fx(p.x), y: fy(p.y) });
+    const order = [...plan.items].sort((p, q) => p.delay - q.delay || p.index - q.index);
+    return order.map((it, k) => {
+      const nodeType = k === 0 ? 'clickEffect' : 'withEffect';
+      const spid = spids[it.index];
+      if (plan.mode === 'order') {
+        const kf = keyframesOf(it).map((p) => ({ t: p.t, x: fx(p.x), y: fy(p.y) }));
+        return orderEffect({ nextId, spid, kf, total: Math.round(it.delay + it.dur), nodeType });
+      }
+      return shuffleEffect({ nextId, spid, off: frac(it.off), c1: frac(it.c1), c2: frac(it.c2), curved, delay: Math.round(it.delay), dur: Math.round(it.dur), nodeType });
+    }).join('');
+  };
+}
+
+const ms = (v) => Math.max(0, Math.round(v));
+const ctn = (id, dur, delay, hold = true) =>
+  `<p:cTn id="${id}" dur="${Math.max(1, ms(dur))}"${hold ? ' fill="hold"' : ''}>` +
+  (delay > 0 || dur === 1 ? `<p:stCondLst><p:cond delay="${ms(delay)}"/></p:stCondLst>` : '') + `</p:cTn>`;
+const setVisibility = (nextId, spid, value, delay) =>
+  `<p:set><p:cBhvr>${ctn(nextId(), 1, delay)}${target(spid)}<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>` +
+  `<p:to><p:strVal val="${value}"/></p:to></p:set>`;
+const fade = (nextId, spid, way, dur, delay) =>
+  `<p:animEffect transition="${way}" filter="fade"><p:cBhvr>${ctn(nextId(), dur, delay, false)}${target(spid)}</p:cBhvr></p:animEffect>`;
+// Propriété animée par images clés : frames = [{ tm (0..100000), val (texte) }]
+const keyed = (nextId, spid, attr, frames, dur, delay) =>
+  // Position : additive="base" comme dans les entrées natives ; taille : rien, comme dans le zoom natif
+  `<p:anim calcmode="lin" valueType="num"><p:cBhvr${/^ppt_[xy]$/.test(attr) ? ' additive="base"' : ''}>${ctn(nextId(), dur, delay)}${target(spid)}` +
+  `<p:attrNameLst><p:attrName>${attr}</p:attrName></p:attrNameLst></p:cBhvr><p:tavLst>` +
+  frames.map((f) => `<p:tav tm="${f.tm}"><p:val><p:strVal val="${f.val}"/></p:val></p:tav>`).join('') + `</p:tavLst></p:anim>`;
+// Un effet (une ligne du volet Animations) ; son identifiant est pris avant ceux de ses mouvements.
+const effect = (nextId, attrs, nodeType, delay, body) => {
+  const id = nextId();
+  return `<p:par><p:cTn id="${id}" ${attrs} fill="hold" nodeType="${nodeType}"><p:stCondLst><p:cond delay="${ms(delay)}"/></p:stCondLst>` +
+    `<p:childTnLst>${body(nextId)}</p:childTnLst></p:cTn></p:par>`;
+};
+
+const ZOOM_IN = 'presetID="53" presetClass="entr" presetSubtype="16"'; // zoom avec fondu
+const FADE_IN = 'presetID="10" presetClass="entr" presetSubtype="0"';
+const FADE_OUT = 'presetID="10" presetClass="exit" presetSubtype="0"';
+
+/**
+ * Emoji qui pousse. Chaque emoji est une image rangée hors de la diapo ; l'animation la place à
+ * l'emplacement de la lettre, la fait grandir depuis le bas, puis la fond dans la suivante ou dans la lettre.
+ * @param plan      résultat de emojiPlan ; chaque emoji porte pic (indice d'image), chaque lettre aussi
+ * @param grouping  'image' : une animation par image ; 'split' : entrée et sortie séparées ;
+ *                  'single' : une seule animation contenant tous les mouvements (expérimental)
+ */
+export function emojiTimeline(plan, grouping = 'image') {
+  return ({ nextId, spids, fy, ax, ay }) => {
+    const blocks = []; // { at, enter(id, t0) → mouvements d'entrée, leave(id, t0) → mouvements de sortie, exitAt }
+    for (const it of plan.items) {
+      const size = fy(it.box.size), cx = ax(it.box.cx), bottom = ay(it.box.bottom);
+      for (const e of it.emojis) {
+        const spid = spids[e.pic];
+        const len = e.end - e.a;
+        const frames = (val) => {
+          const out = [];
+          for (const k of e.kf) {
+            const tm = Math.round((100000 * (k.t - e.a)) / len);
+            if (out.length && tm <= out[out.length - 1].tm) continue;
+            out.push({ tm, val: val(k.s) });
+          }
+          out[0].tm = 0;
+          out[out.length - 1].tm = 100000;
+          return out;
+        };
+        const here = signed(cx);
+        blocks.push({
+          at: it.start + e.a, exitAt: it.start + e.b, spid,
+          enter: (id, t0) =>
+            setVisibility(id, spid, 'visible', t0) +
+            keyed(id, spid, 'ppt_x', [{ tm: 0, val: here }, { tm: 100000, val: here }], len, t0) +
+            keyed(id, spid, 'ppt_y', frames((s) => signed(bottom - (s * size) / 2)), len, t0) +
+            keyed(id, spid, 'ppt_w', frames((s) => (s > 0.99999 ? '#ppt_w' : `#ppt_w*${num(s)}`)), len, t0) +
+            keyed(id, spid, 'ppt_h', frames((s) => (s > 0.99999 ? '#ppt_h' : `#ppt_h*${num(s)}`)), len, t0) +
+            fade(id, spid, 'in', e.fadeIn, t0),
+          leave: (id, t0) =>
+            fade(id, spid, 'out', e.fadeOut, t0) +
+            setVisibility(id, spid, 'hidden', t0 + e.fadeOut - 1),
+          leaveOffset: e.b - e.a,
+        });
+      }
+      const spid = spids[it.pic];
+      blocks.push({
+        at: it.start + it.grow, spid, letter: true,
+        enter: (id, t0) => setVisibility(id, spid, 'visible', t0) + fade(id, spid, 'in', it.dur - it.grow, t0),
+      });
+    }
+    blocks.sort((p, q) => p.at - q.at);
+
+    if (grouping === 'single') {
+      return effect(nextId, ZOOM_IN, 'clickEffect', 0,
+        (id) => blocks.map((b) => b.enter(id, b.at) + (b.leave ? b.leave(id, b.at + b.leaveOffset) : '')).join(''));
+    }
+    const effects = [];
+    for (const b of blocks) {
+      if (b.letter) effects.push({ at: b.at, attrs: FADE_IN, body: (id) => b.enter(id, 0) });
+      else if (grouping === 'split') {
+        effects.push({ at: b.at, attrs: ZOOM_IN, body: (id) => b.enter(id, 0) });
+        effects.push({ at: b.exitAt, attrs: FADE_OUT, body: (id) => b.leave(id, 0) });
+      } else effects.push({ at: b.at, attrs: ZOOM_IN, body: (id) => b.enter(id, 0) + b.leave(id, b.leaveOffset) });
+    }
+    effects.sort((p, q) => p.at - q.at);
+    return effects.map((e, k) => effect(nextId, e.attrs, k === 0 ? 'clickEffect' : 'withEffect', e.at, e.body)).join('');
+  };
+}
+
 /** Enveloppe un fragment pour pouvoir l'analyser avec les bons espaces de noms. */
 export const wrap = (xml) => `<root xmlns:p="${NS.p}" xmlns:a="${NS.a}" xmlns:r="${NS.r}">${xml}</root>`;
