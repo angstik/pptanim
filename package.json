@@ -1,6 +1,6 @@
 {
   "name": "pptanim",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "PPT Anim : anime un texte PowerPoint lettre par lettre avec des animations natives (PWA).",

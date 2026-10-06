@@ -1,7 +1,7 @@
 // PPT Anim : application web installable (pptx + image de la zone de texte, pptx animé téléchargé)
 // et, via taskpane.html, complément PowerPoint (zone de texte sélectionnée, diapo animée réinsérée).
 
-import { segment, unitsOf, cropUnit } from './core/segment.js';
+import { segment, unitsOf, cropUnit, matchScore } from './core/segment.js';
 import { scramblePlan, orderKeyframes, curvePoint, ease } from './core/effects.js';
 import { emojiPlan, parseSeries } from './core/emoji.js';
 import { scrambleTimeline, emojiTimeline } from './core/timing.js';
@@ -11,7 +11,8 @@ import { initPwa } from './pwa.js';
 const $ = (id) => document.getElementById(id);
 const engine = createEngine({ DOMParser, XMLSerializer });
 const EMU = 12700; // par point
-const state = { addin: false, img: null, seg: null, text: '', src: null, file: null, seed: 1, color: '#ffffff' };
+// state.file est toujours le même objet : les deux fichiers peuvent arriver en même temps, dans n'importe quel ordre.
+const state = { addin: false, img: null, seg: null, text: '', src: null, file: {}, seed: 1, color: '#ffffff' };
 
 function log(msg) {
   const t = new Date().toLocaleTimeString('fr-FR');
@@ -319,45 +320,135 @@ async function generateAddin() {
 }
 
 // ---------- Mode fichier ----------
+const snippet = (t, n = 40) => t.replace(/\s+/g, ' ').trim().slice(0, n);
+
 async function loadPptx(file) {
   const bytes = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(bytes);
   const deck = await engine.readDeck(zip);
-  state.file = { ...(state.file || {}), name: file.name, bytes, deck, zip };
-  $('s-slide').innerHTML = deck.slides.map((s, i) => `<option value="${i}">Diapo ${i + 1}</option>`).join('');
-  $('s-slide').disabled = false;
-  log(`Présentation chargée : ${deck.slides.length} diapo(s), ${deck.size.cx}×${deck.size.cy} EMU`);
-  await loadSlide();
+  // Toutes les diapos sont lues : la zone de texte à animer peut être sur n'importe laquelle.
+  const slides = [];
+  for (const s of deck.slides) slides.push(await engine.readSlide(zip, s.path));
+  Object.assign(state.file, { name: file.name, bytes, deck, zip, slides });
+  const sel = $('s-slide');
+  sel.textContent = '';
+  slides.forEach((sl, i) => {
+    const op = document.createElement('option');
+    op.value = i;
+    op.textContent = `Diapo ${i + 1} : ${sl.shapes.length ? snippet(sl.shapes[0].text, 30) : 'aucune zone de texte'}`;
+    sel.appendChild(op);
+  });
+  sel.disabled = false;
+  const zones = slides.reduce((n, sl) => n + sl.shapes.length, 0);
+  log(`Présentation chargée : ${slides.length} diapo(s), ${zones} zone(s) de texte, ${deck.size.cx}×${deck.size.cy} EMU`);
+  showSlide(0);
+  locate();
 }
-async function loadSlide() {
+
+// Affiche les zones de texte d'une diapo et en présélectionne une.
+function showSlide(index, shapeIndex = 0) {
   const f = state.file;
-  f.slide = await engine.readSlide(f.zip, f.deck.slides[+$('s-slide').value].path);
+  $('s-slide').value = String(index);
+  f.slide = f.slides[index];
   const sel = $('s-shape');
   sel.textContent = '';
   f.slide.shapes.forEach((s, i) => {
     const op = document.createElement('option');
     op.value = i;
-    op.textContent = `${s.name} : ${s.text.replace(/\s+/g, ' ').slice(0, 40)}`;
+    op.textContent = `${s.name} : ${snippet(s.text)}`;
     sel.appendChild(op);
   });
   sel.disabled = !f.slide.shapes.length;
-  if (!f.slide.shapes.length) status('Aucune zone de texte utilisable sur cette diapo (les zones placées dans un groupe ne sont pas prises en compte).', 'warn');
+  if (f.slide.shapes.length) sel.value = String(Math.min(shapeIndex, f.slide.shapes.length - 1));
   readyFile();
 }
+
+function tell(msg, kind) {
+  $('locate').hidden = !msg;
+  $('locate').textContent = msg || '';
+  $('locate').dataset.kind = kind || '';
+}
+
+// Classe les zones de texte de la présentation selon leur ressemblance avec l'image.
+function candidates() {
+  const f = state.file;
+  const ratio = f.img.width / f.img.height;
+  const list = [];
+  f.slides.forEach((sl, slide) => sl.shapes.forEach((sh, shape) => {
+    const score = matchScore(f.seen, sh.text);
+    // À ressemblance égale, on préfère la zone dont les proportions sont celles de l'image.
+    const fit = sh.box ? Math.abs(Math.log(ratio / (sh.box.cx / sh.box.cy))) : 1;
+    list.push({ slide, shape, score, fit, name: sh.name });
+  }));
+  return list.sort((p, q) => q.score - p.score || p.fit - q.fit);
+}
+
+// Retrouve la diapo et la zone de texte à partir de l'image, dès que les deux fichiers sont là.
+function locate() {
+  const f = state.file;
+  if (!f.slides || !f.img) return;
+  if (!f.seen) {
+    try {
+      f.seen = segment(f.img, '').seenCounts;
+    } catch (e) {
+      tell(`Image inexploitable : ${e.message}`, 'warn');
+      return;
+    }
+  }
+  const list = candidates();
+  if (!list.length) { tell('Cette présentation ne contient aucune zone de texte utilisable.', 'warn'); return; }
+  const best = list[0];
+  if (best.score < 0.75) {
+    tell('Aucune zone de texte ne correspond nettement à l\'image : choisissez la diapo et la zone de texte.', 'warn');
+    log(`Recherche de la zone : aucune correspondance nette (meilleure : diapo ${best.slide + 1}, « ${best.name} », ${Math.round(best.score * 100)} %).`);
+    return;
+  }
+  showSlide(best.slide, best.shape);
+  const same = list.filter((c) => c.score === best.score);
+  if (same.length > 1) {
+    const where = [...new Set(same.map((c) => c.slide + 1))].join(', ');
+    tell(`Plusieurs zones de texte correspondent à l'image (diapo${where.includes(',') ? 's' : ''} ${where}). Choix proposé : diapo ${best.slide + 1}, « ${best.name} ». Vérifiez-le.`, 'warn');
+  } else {
+    tell(`Zone de texte retrouvée d'après l'image : diapo ${best.slide + 1}, « ${best.name} ».`, 'ok');
+  }
+  log(`Recherche de la zone : diapo ${best.slide + 1}, « ${best.name} » (${Math.round(best.score * 100)} %, ${same.length} candidate(s) à égalité).`);
+}
+
+// Choix manuel d'une diapo : on y présélectionne la zone qui ressemble le plus à l'image.
+function pickSlide() {
+  const f = state.file;
+  const index = +$('s-slide').value;
+  const here = f.seen ? candidates().filter((c) => c.slide === index) : [];
+  showSlide(index, here.length ? here[0].shape : 0);
+  tell(f.slide.shapes.length ? '' : 'Aucune zone de texte utilisable sur cette diapo (les zones placées dans un groupe ne sont pas prises en compte).', 'warn');
+}
+
+async function loadPng(file) {
+  const f = state.file;
+  f.png = file;
+  f.img = await toImageData(file);
+  f.seen = null;
+  log(`Image de la zone de texte : ${file.name || 'collée'} (${f.img.width}×${f.img.height} px, ${Math.round(file.size / 1024)} Ko)`);
+  readyFile();
+  locate();
+}
+
 function readyFile() {
-  $('analyze-file').disabled = !(state.file && state.file.slide && state.file.slide.shapes.length && state.file.png);
+  const f = state.file;
+  $('analyze-file').disabled = !(f.slide && f.slide.shapes.length && f.img);
 }
 async function analyzeFile() {
   const f = state.file;
   const shape = f.slide.shapes[+$('s-shape').value];
   if (shape.rotated) log('Attention : zone de texte pivotée ou retournée, ce qui n\'est pas géré.');
-  const img = await toImageData(f.png);
+  const img = f.img;
   if (shape.box) {
     const ratio = (img.width / img.height) / (shape.box.cx / shape.box.cy);
     if (Math.abs(ratio - 1) > 0.03) log(`Attention : l'image (${img.width}×${img.height}) n'a pas les proportions de la zone de texte ; le placement des lettres peut être décalé.`);
   }
   f.shapeIndex = +$('s-shape').value;
   f.slideIndex = +$('s-slide').value;
+  log(`Analyse : diapo ${f.slideIndex + 1}, zone de texte « ${shape.name} ».`);
   analyze(img, shape.text);
 }
 async function generateFile() {
@@ -377,7 +468,7 @@ async function generateFile() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  log(`Fichier généré : ${res.pictures} images, ${res.existingEffects} animations existantes conservées, chronologie ${res.timingCreated ? 'créée' : 'complétée'}.`);
+  log(`Fichier généré (diapo ${f.slideIndex + 1}) : ${res.pictures} images, ${res.existingEffects} animations existantes conservées, chronologie ${res.timingCreated ? 'créée' : 'complétée'}.`);
   status(`${a.download} téléchargé. Ouvrez-le dans PowerPoint et lancez le diaporama.`, 'ok');
 }
 
@@ -444,15 +535,9 @@ async function start() {
   $('analyze-addin').onclick = (e) => guard('Analyse', analyzeSelection, e.currentTarget);
   $('go-addin').onclick = (e) => guard('Génération', generateAddin, e.currentTarget);
   $('f-pptx').onchange = (e) => { const f = e.target.files[0]; if (f) guard('Lecture du pptx', () => loadPptx(f)); };
-  $('f-png').onchange = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    state.file = state.file || {};
-    state.file.png = f;
-    log(`Image de la zone de texte : ${f.name || 'collée'} (${Math.round(f.size / 1024)} Ko)`);
-    readyFile();
-  };
-  $('s-slide').onchange = () => guard('Lecture de la diapo', loadSlide);
+  $('f-png').onchange = (e) => { const f = e.target.files[0]; if (f) guard('Lecture de l\'image', () => loadPng(f)); };
+  $('s-slide').onchange = () => guard('Lecture de la diapo', async () => pickSlide());
+  $('s-shape').onchange = () => tell('');
   $('analyze-file').onclick = (e) => guard('Analyse', analyzeFile, e.currentTarget);
   $('go-file').onclick = (e) => guard('Génération', generateFile, e.currentTarget);
   $('play').onclick = () => guard('Aperçu', async () => buildPreview(true));

@@ -14,6 +14,9 @@ const kids = (el, ns, name) => Array.from(el.childNodes).filter((n) => n.nodeTyp
 const kid = (el, ns, name) => kids(el, ns, name)[0] || null;
 const all = (el, ns, name) => Array.from(el.getElementsByTagNameNS(ns, name));
 
+// Écrit un fichier dans le paquet sans y créer d'entrées « dossier », absentes des pptx d'origine.
+const put = (zip, path, data) => zip.file(path, data, { createFolders: false });
+
 export function createEngine({ DOMParser, XMLSerializer }) {
   const parse = (xml, what) => {
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -167,7 +170,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
     const rids = pictures.map((c) => {
       if (c.mediaKey && shared.has(c.mediaKey)) return shared.get(c.mediaKey);
       const name = `pptanim-${tag}-${String(++files).padStart(3, '0')}.png`;
-      zip.file(mediaDir + name, c.png);
+      put(zip, mediaDir + name, c.png);
       const rid = nextRid();
       const r = rels.createElementNS(REL_NS, 'Relationship');
       r.setAttribute('Id', rid);
@@ -177,7 +180,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
       if (c.mediaKey) shared.set(c.mediaKey, rid);
       return rid;
     });
-    zip.file(relsPath, serialize(rels));
+    put(zip, relsPath, serialize(rels));
 
     const ctPath = '[Content_Types].xml';
     const ct = parse(await text(zip, ctPath), ctPath);
@@ -186,7 +189,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
       d.setAttribute('Extension', 'png');
       d.setAttribute('ContentType', 'image/png');
       ct.documentElement.insertBefore(d, ct.documentElement.firstChild);
-      zip.file(ctPath, serialize(ct));
+      put(zip, ctPath, serialize(ct));
     }
 
     // 2. Images juste au-dessus de la zone de texte d'origine, qui est masquée
@@ -218,7 +221,7 @@ export function createEngine({ DOMParser, XMLSerializer }) {
       s.list.appendChild(fragment(doc, clickGroup({ nextId: s.nextId, effects }))[0]);
     }
 
-    zip.file(slide.path, serialize(doc));
+    put(zip, slide.path, serialize(doc));
     return { pictures: pictures.length, files, timingCreated: seqs.created, existingEffects: seqs.targets[0].existing };
   }
 

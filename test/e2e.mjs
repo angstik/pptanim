@@ -31,6 +31,9 @@ const cases = [
   { name: 'b-emoji-unique', deck: 'b.pptx', mode: 'emoji', group: 'single', total: '6' },
   { name: 'a-emoji-aleatoire', deck: 'a.pptx', mode: 'emoji', group: 'image', total: '4.5', mean: '0.8', sd: '0.5',
     series: ['🌱🌸', '', '★'], line: 'random', word: 'random', letter: 'random' },
+  // Présentation de plusieurs diapos : la zone de texte est sur la 4e, retrouvée d'après l'image
+  { name: 'c-ordonner-lettre', deck: 'c.pptx', mode: 'order', unit: 'letter', order: 'seq', curved: '1', slide: 4 },
+  { name: 'c-emoji-unique', deck: 'c.pptx', mode: 'emoji', group: 'single', total: '6', slide: 4 },
 ];
 
 const browser = await chromium.launch();
@@ -45,7 +48,11 @@ for (const c of cases) {
   await page.setInputFiles('#f-pptx', path.join(fx, c.deck));
   await page.setInputFiles('#f-png', path.join(fx, 'titre.png'));
   await page.waitForFunction(() => !document.getElementById('analyze-file').disabled);
-  await page.selectOption('#s-shape', { index: 0 });
+  // Rien n'est choisi à la main : la diapo et la zone de texte doivent être retrouvées d'après l'image
+  await page.waitForSelector('#locate:not([hidden])');
+  const found = await page.textContent('#locate');
+  const where = `diapo ${c.slide || 1}, « Titre »`;
+  if (!found.includes(where) || !found.startsWith('Zone de texte retrouvée')) errors.push(`${c.name}: zone attendue « ${where} », message « ${found} »`);
   await page.click('#analyze-file');
   await page.waitForSelector('#fx:not([hidden])');
   await page.selectOption('#o-mode', c.mode);
@@ -68,6 +75,27 @@ for (const c of cases) {
   await dl.saveAs(path.join(out, `${c.name}.pptx`));
   const status = await page.textContent('#status');
   console.log(`${c.name}: ${info} | ${await page.textContent('#fx-info')} | ${status}`);
+  await page.close();
+}
+// Image qui ne correspond à aucune zone : rien n'est choisi d'office, puis le choix manuel de la diapo fonctionne
+{
+  const page = await browser.newPage({ viewport: { width: 760, height: 900 } });
+  page.on('pageerror', (e) => errors.push(`sans-correspondance: ${e.message}`));
+  await page.goto(url);
+  await page.waitForSelector('#src-file:not([hidden])');
+  await page.setInputFiles('#f-pptx', path.join(fx, 'c.pptx'));
+  await page.setInputFiles('#f-png', path.join(fx, 'autre.png'));
+  await page.waitForSelector('#locate:not([hidden])');
+  const none = await page.textContent('#locate');
+  if (!none.startsWith('Aucune zone de texte ne correspond')) errors.push(`sans-correspondance: message « ${none} »`);
+  const labels = await page.$$eval('#s-slide option', (o) => o.map((x) => x.textContent));
+  await page.setInputFiles('#f-png', path.join(fx, 'titre.png'));
+  await page.waitForFunction(() => document.getElementById('locate').textContent.includes('diapo 4'));
+  await page.selectOption('#s-slide', '1'); // l'utilisateur choisit la diapo 2, qui a aussi une zone « Titre »
+  const picked = await page.$eval('#s-shape', (s) => s.options[s.selectedIndex].textContent);
+  if (!picked.startsWith('Titre : Bonjour à tous, voici un autre')) errors.push(`choix manuel: zone « ${picked} »`);
+  console.log(`sans correspondance: ${none} | diapos proposées: ${JSON.stringify(labels)} | choix manuel diapo 2: ${picked}`);
+  await page.screenshot({ path: path.join(out, 'c-choix-volet.png') });
   await page.close();
 }
 // Mode complément avec une fausse API Office (simulation : ne prouve rien sur PowerPoint lui-même,

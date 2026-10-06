@@ -23,8 +23,8 @@ def check(cond, msg):
 
 
 # Durée totale attendue par cas (secondes), telle que réglée dans e2e.mjs
-TOTALS = {"b-emoji-image": 6.0, "b-emoji-separe": 6.0, "b-emoji-unique": 6.0, "a-emoji-aleatoire": 4.5}
-EXPECTED_LINES = {"b-emoji-unique": 1}
+TOTALS = {"b-emoji-image": 6.0, "b-emoji-separe": 6.0, "b-emoji-unique": 6.0, "a-emoji-aleatoire": 4.5, "c-emoji-unique": 6.0}
+EXPECTED_LINES = {"b-emoji-unique": 1, "c-emoji-unique": 1}
 
 
 def emoji_checks(name, sld, new, mine, rel, ns):
@@ -68,13 +68,39 @@ def emoji_checks(name, sld, new, mine, rel, ns):
     return f"{len(parked)} emoji dans {len(files)} fichiers, fin à {end} ms"
 
 
-def one(path, source, before_png):
+# Position affichée de la diapo qui contient la zone de texte à animer, par présentation d'essai
+TARGET = {"a": 1, "b": 1, "c": 4}
+
+
+def slide_parts(z):
+    """Fichiers des diapos, dans l'ordre d'affichage."""
+    pres = etree.fromstring(z.read("ppt/presentation.xml"))
+    rels = {r.get("Id"): r.get("Target") for r in etree.fromstring(z.read("ppt/_rels/presentation.xml.rels"))}
+    return ["ppt/" + rels[s.get(f"{{{R}}}id")] for s in pres.iter(f"{{{P}}}sldId")]
+
+
+def one(path, source, before_png, position):
     name = path.name
     z = zipfile.ZipFile(path)
+    zs = zipfile.ZipFile(source)
     check(z.testzip() is None, f"{name}: zip corrompu")
-    sld = etree.fromstring(z.read("ppt/slides/slide1.xml"))
-    rels = etree.fromstring(z.read("ppt/slides/_rels/slide1.xml.rels"))
-    src = etree.fromstring(zipfile.ZipFile(source).read("ppt/slides/slide1.xml"))
+
+    # Seule la diapo visée est modifiée ; tout le reste de la présentation est identique à l'original
+    parts = slide_parts(z)
+    check(parts == slide_parts(zs), f"{name}: ordre ou liste des diapos modifié")
+    touched = [p for p in parts if b"PPTAnim " in z.read(p)]
+    part = parts[position - 1]
+    check(touched == [part], f"{name}: diapos modifiées {touched}, attendu {part} (diapo {position})")
+    rels_part = part.replace("slides/", "slides/_rels/") + ".rels"
+    allowed = {part, rels_part, "[Content_Types].xml"}
+    changed = [n for n in zs.namelist() if n not in allowed and zs.read(n) != z.read(n)]
+    check(not changed, f"{name}: fichiers modifiés hors de la diapo visée {changed[:5]}")
+    added = [n for n in z.namelist() if n not in zs.namelist()]
+    check(all(n.startswith("ppt/media/pptanim-") for n in added), f"{name}: fichiers ajoutés inattendus {added[:5]}")
+
+    sld = etree.fromstring(z.read(part))
+    rels = etree.fromstring(z.read(rels_part))
+    src = etree.fromstring(zs.read(part))
 
     # Ordre des enfants de la diapo : la chronologie vient avant extLst
     tags = [etree.QName(c).localname for c in sld]
@@ -131,10 +157,10 @@ def one(path, source, before_png):
 
     # python-pptx relit le fichier
     prs = Presentation(str(path))
-    check(len(prs.slides) == 1, f"{name}: nombre de diapos")
+    check(len(prs.slides) == len(parts), f"{name}: nombre de diapos")
 
     # Rendu LibreOffice : image finale identique à l'originale (lettres à leur place, texte d'origine masqué)
-    after = Image.open(render(path, dpi=96)).convert("RGB")
+    after = Image.open(render(path, dpi=96, page=position)).convert("RGB")
     before = Image.open(before_png).convert("RGB")
     diff = ImageChops.difference(before, after)
     mean = sum(ImageStat.Stat(diff).mean) / 3
@@ -147,10 +173,10 @@ def one(path, source, before_png):
 
 def main():
     fx, out = HERE / "fixtures", HERE / "out"
-    before = {d: render(fx / f"{d}.pptx", dpi=96) for d in "ab"}
+    before = {d: render(fx / f"{d}.pptx", dpi=96, page=TARGET[d]) for d in TARGET}
     for path in sorted(out.glob("*.pptx")):
         d = path.name[0]
-        one(path, fx / f"{d}.pptx", before[d])
+        one(path, fx / f"{d}.pptx", before[d], TARGET[d])
     print("\nÉCHECS :\n" + "\n".join(fails) if fails else "\nTous les contrôles passent.")
     sys.exit(1 if fails else 0)
 

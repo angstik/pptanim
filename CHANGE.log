@@ -2,6 +2,16 @@ PPT Anim : historique des versions
 ==================================
 La version la plus récente est en haut. Le numéro est celui de package.json.
 
+0.3.1 (2026-10-06)
+------------------
+Présentations de plusieurs diapos.
+- La diapo et la zone de texte sont retrouvées automatiquement en comparant l'image aux textes de
+  toutes les diapos ; le choix proposé est affiché et reste modifiable.
+- Message explicite quand aucune zone ne correspond, ou quand plusieurs correspondent.
+- La liste des diapos montre le début du texte de chacune.
+- Correction : déposer les deux fichiers en même temps pouvait faire perdre l'image.
+- Le fichier produit ne contient plus d'entrées « dossier » ajoutées ; seule la diapo visée est modifiée.
+
 0.3.0 (2026-10-04)
 ------------------
 Nouvel effet : emoji qui pousse.

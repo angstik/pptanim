@@ -83,6 +83,33 @@ function bands(comps) {
   return out;
 }
 
+// Mots d'un texte : pour chaque mot, ses caractères et le nombre de blocs que chacun dessine.
+function wordsOf(text) {
+  const words = [];
+  let open = false;
+  for (const g of graphemes(text)) {
+    if (/^\s+$/u.test(g)) { open = false; continue; }
+    if (!open) { words.push([]); open = true; }
+    words[words.length - 1].push({ ch: g, n: MULTI[g] || 1 });
+  }
+  return words;
+}
+
+/**
+ * Ressemblance entre une image découpée et un texte, pour retrouver à quelle zone de texte l'image
+ * correspond. @param seenCounts nombre de blocs de chaque mot vu dans l'image (seg.seenCounts)
+ * @returns 0 à 1 : 1 si l'image montre les mêmes mots, avec le même nombre de lettres chacun
+ */
+export function matchScore(seenCounts, text) {
+  const wanted = wordsOf(text).map((w) => w.reduce((sum, t) => sum + t.n, 0));
+  if (!wanted.length || !seenCounts.length) return 0;
+  if (wanted.length !== seenCounts.length) {
+    // Pas le même nombre de mots : au mieux une ressemblance lointaine
+    return 0.3 * Math.max(0, 1 - Math.abs(wanted.length - seenCounts.length) / Math.max(wanted.length, seenCounts.length));
+  }
+  return 0.5 + 0.5 * (wanted.filter((n, i) => n === seenCounts[i]).length / wanted.length);
+}
+
 /**
  * @param img  { width, height, data } RGBA
  * @param text texte de la forme (optionnel) : sert à fiabiliser lettres et mots
@@ -159,13 +186,7 @@ export function segment(img, text, opts = {}) {
   });
 
   // Mots du texte : un caractère non blanc = un bloc (ou plusieurs pour « " … »).
-  const wanted = [];
-  let open = false;
-  for (const g of graphemes(text)) {
-    if (/^\s+$/u.test(g)) { open = false; continue; }
-    if (!open) { wanted.push([]); open = true; }
-    wanted[wanted.length - 1].push({ ch: g, n: MULTI[g] || 1 });
-  }
+  const wanted = wordsOf(text);
   const expected = wanted.flat().reduce((sum, t) => sum + t.n, 0);
   const merge = (list, extra) => list.reduce((u, b) => ({ ...u, ...union(u, b), ids: u.ids.concat(b.ids) }), { ...box(list[0]), ids: [], line: list[0].line, ...extra });
 
@@ -202,6 +223,7 @@ export function segment(img, text, opts = {}) {
     width: W, height: H, labels, maxLineH,
     letters, words, lines: lines.filter(Boolean),
     lineBands, matched, aligned, fused, expected, found: blobs.length,
+    seenCounts: seen.map((group) => group.length),
   };
 }
 

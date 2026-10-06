@@ -20,7 +20,8 @@ Tout le traitement se fait dans le navigateur : aucun fichier n'est envoyé sur 
 
 1. Dans PowerPoint : clic droit sur la zone de texte, « Enregistrer en tant qu'image », format PNG.
 2. Dans l'application : choisir le .pptx et le PNG (ou les déposer sur la page, ou coller l'image avec
-   Ctrl+V), puis la diapo et la zone de texte, « Analyser ».
+   Ctrl+V). La diapo et la zone de texte sont retrouvées d'après l'image, parmi toutes les diapos ;
+   vérifier le choix proposé, puis « Analyser ».
 3. Régler l'effet, vérifier l'aperçu, « Télécharger le .pptx animé ».
 4. Ouvrir le fichier obtenu dans PowerPoint et lancer le diaporama.
 

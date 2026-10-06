@@ -53,6 +53,7 @@
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
   .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
   .notice { font-size: 13px; margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+  #locate[data-kind=ok] { color: var(--ok); } #locate[data-kind=warn] { color: var(--warn); }
   #status[data-kind=ok] { color: var(--ok); } #status[data-kind=warn] { color: var(--warn); } #status[data-kind=err] { color: var(--err); }
   #update { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
   body.drag main { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: 12px; }
@@ -119,9 +120,11 @@
       <div class="field"><label for="s-shape">Zone de texte à animer</label><select id="s-shape" disabled></select></div>
       <div class="field"><label for="f-png">Image de cette zone de texte (.png)</label><input id="f-png" type="file" accept="image/png"></div>
     </div>
+    <p id="locate" class="hint" hidden></p>
     <div class="row"><button id="analyze-file" disabled>Analyser</button></div>
     <p class="hint">Pour obtenir l'image : dans PowerPoint, clic droit sur le bord de la zone de texte, « Enregistrer en tant
-      qu'image », format PNG. Le bouton « Aide » détaille les étapes.</p>
+      qu'image », format PNG. La diapo et la zone de texte sont retrouvées à partir de cette image ; vous pouvez corriger le choix.
+      Le bouton « Aide » détaille les étapes.</p>
   </section>
 
   <section id="seg" hidden>
@@ -245,7 +248,7 @@
         <rect x="80" y="57" width="22" height="9" rx="2" fill="var(--accent)"/>
       </svg>
       <div><h3>Donner les deux fichiers</h3>
-        <p>Choisir la présentation (.pptx) et l'image (.png). On peut aussi les déposer sur la page, ou coller l'image avec Ctrl+V. Indiquer la diapo et la zone de texte concernées, puis « Analyser ».</p></div>
+        <p>Choisir la présentation (.pptx) et l'image (.png). On peut aussi les déposer sur la page, ou coller l'image avec Ctrl+V. L'application retrouve la diapo et la zone de texte d'après l'image : vérifier le choix proposé, puis « Analyser ».</p></div>
     </li>
     <li>
       <svg viewBox="0 0 132 88" role="img" aria-label="Lettres mélangées qui se remettent en ordre">
